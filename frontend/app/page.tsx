@@ -243,9 +243,42 @@ export default function Home() {
 }
 
 function ResultPanel({ result }: { result: Result }) {
-  const scores = result.analysis.scores;
-  const eqProfile = result.analysis.eq_profile;
-  const recommendation = result.recommendation;
+  const scores = result?.analysis?.scores || ({} as Scores);
+  const eqProfile = result?.analysis?.eq_profile || ({} as EqProfile);
+  const recommendation = result?.recommendation || ({} as Recommendation);
+
+  const ampExamples = Array.isArray(recommendation.amp_examples)
+    ? recommendation.amp_examples
+    : [];
+
+  const chain = Array.isArray(recommendation.chain)
+    ? recommendation.chain
+    : [];
+
+  const eqTips = Array.isArray(recommendation.eq_tips)
+    ? recommendation.eq_tips
+    : [];
+
+  const notes = Array.isArray(recommendation.notes)
+    ? recommendation.notes
+    : [];
+
+  const ampSettings = recommendation.amp_settings || {};
+  const drive = recommendation.drive || {
+    type: '추천 없음',
+    purpose: '드라이브 추천 데이터가 없습니다.',
+  };
+
+  const cabinet = recommendation.cabinet || {
+    cab: '추천 없음',
+    mic: '추천 없음',
+    tip: '캐비넷 추천 데이터가 없습니다.',
+  };
+
+  const ambience = recommendation.ambience || {
+    reverb: '추천 없음',
+    tip: '공간계 추천 데이터가 없습니다.',
+  };
 
   return (
     <div>
@@ -255,33 +288,49 @@ function ResultPanel({ result }: { result: Result }) {
             <p className="text-sm font-bold uppercase tracking-[0.25em] text-indigo-600">
               Tone Type
             </p>
-            <h3 className="mt-2 text-2xl font-black">{recommendation.tone_type}</h3>
+            <h3 className="mt-2 text-2xl font-black">
+              {recommendation.tone_type || 'Unknown Tone'}
+            </h3>
           </div>
+
           <div className="rounded-full bg-slate-950 px-3 py-2 text-xs font-black text-white">
-            {recommendation.confidence}% confidence
+            {recommendation.confidence ?? 0}% confidence
           </div>
         </div>
 
-        <p className="mt-3 leading-7 text-slate-700">{recommendation.tone_summary}</p>
+        <p className="mt-3 leading-7 text-slate-700">
+          {recommendation.tone_summary || '톤 요약 데이터가 없습니다.'}
+        </p>
 
         <div className="mt-5 rounded-2xl bg-slate-100 p-4">
           <p className="text-xs font-bold uppercase text-slate-500">Recommended Amp</p>
-          <p className="mt-1 text-lg font-black">{recommendation.amp_family}</p>
-          <p className="mt-2 text-sm leading-6 text-slate-600">{recommendation.amp_reason}</p>
+          <p className="mt-1 text-lg font-black">
+            {recommendation.amp_family || '추천 앰프 데이터 없음'}
+          </p>
+          <p className="mt-2 text-sm leading-6 text-slate-600">
+            {recommendation.amp_reason || '추천 이유 데이터가 없습니다.'}
+          </p>
 
-          <div className="mt-3 flex flex-wrap gap-2">
-            {recommendation.amp_examples.map((amp) => (
-              <span key={amp} className="rounded-full bg-white px-3 py-1 text-xs font-bold">
-                {amp}
-              </span>
-            ))}
-          </div>
+          {ampExamples.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {ampExamples.map((amp) => (
+                <span key={amp} className="rounded-full bg-white px-3 py-1 text-xs font-bold">
+                  {amp}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
       <div className="mt-5 space-y-3">
         {scoreLabels.map(([key, title, desc]) => (
-          <ScoreBar key={key} title={title} desc={desc} value={scores[key]} />
+          <ScoreBar
+            key={key}
+            title={title}
+            desc={desc}
+            value={typeof scores[key] === 'number' ? scores[key] : 0}
+          />
         ))}
       </div>
 
@@ -291,7 +340,7 @@ function ResultPanel({ result }: { result: Result }) {
           {Object.entries(eqProfile).map(([key, value]) => (
             <div key={key} className="rounded-2xl bg-white/5 p-4">
               <p className="text-xs uppercase text-slate-400">{key.replaceAll('_', ' ')}</p>
-              <p className="mt-1 text-2xl font-black">{Number(value).toFixed(2)}</p>
+              <p className="mt-1 text-2xl font-black">{Number(value || 0).toFixed(2)}</p>
             </div>
           ))}
         </div>
@@ -300,7 +349,7 @@ function ResultPanel({ result }: { result: Result }) {
       <div className="mt-6 rounded-[1.5rem] bg-white/5 p-5">
         <h4 className="font-black">추천 시그널 체인</h4>
         <div className="mt-4 flex flex-wrap gap-2">
-          {recommendation.chain.map((item) => (
+          {chain.map((item) => (
             <span
               key={item}
               className="rounded-full bg-indigo-400/15 px-3 py-2 text-xs text-indigo-100 ring-1 ring-indigo-300/20"
@@ -312,38 +361,42 @@ function ResultPanel({ result }: { result: Result }) {
       </div>
 
       <div className="mt-6 grid gap-3 sm:grid-cols-2">
-        <InfoCard title="Drive" main={recommendation.drive.type} body={recommendation.drive.purpose} />
-        <InfoCard title="Cabinet" main={recommendation.cabinet.cab} body={recommendation.cabinet.tip} />
-        <InfoCard title="Mic" main={recommendation.cabinet.mic} body="추천 마이크/IR 방향" />
-        <InfoCard title="Ambience" main={recommendation.ambience.reverb} body={recommendation.ambience.tip} />
+        <InfoCard title="Drive" main={drive.type} body={drive.purpose} />
+        <InfoCard title="Cabinet" main={cabinet.cab} body={cabinet.tip} />
+        <InfoCard title="Mic" main={cabinet.mic} body="추천 마이크/IR 방향" />
+        <InfoCard title="Ambience" main={ambience.reverb} body={ambience.tip} />
       </div>
 
       <div className="mt-6 rounded-[1.5rem] bg-white/5 p-5">
         <h4 className="font-black">추천 앰프 세팅</h4>
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
-          {Object.entries(recommendation.amp_settings).map(([key, value]) => (
+          {Object.entries(ampSettings).map(([key, value]) => (
             <div key={key} className="rounded-2xl bg-white/5 p-4">
               <p className="text-xs uppercase text-slate-400">{key.replaceAll('_', ' ')}</p>
-              <p className="mt-1 text-2xl font-black">{value}</p>
+              <p className="mt-1 text-2xl font-black">{Number(value || 0).toFixed(1)}</p>
             </div>
           ))}
         </div>
       </div>
 
-      <div className="mt-6 rounded-[1.5rem] bg-amber-400/10 p-5 ring-1 ring-amber-300/10">
-        <h4 className="font-black text-amber-100">EQ 보정 팁</h4>
-        <ul className="mt-3 space-y-2 text-sm leading-6 text-amber-100">
-          {recommendation.eq_tips.map((tip) => (
-            <li key={tip}>• {tip}</li>
-          ))}
-        </ul>
-      </div>
+      {eqTips.length > 0 && (
+        <div className="mt-6 rounded-[1.5rem] bg-amber-400/10 p-5 ring-1 ring-amber-300/10">
+          <h4 className="font-black text-amber-100">EQ 보정 팁</h4>
+          <ul className="mt-3 space-y-2 text-sm leading-6 text-amber-100">
+            {eqTips.map((tip) => (
+              <li key={tip}>• {tip}</li>
+            ))}
+          </ul>
+        </div>
+      )}
 
-      <div className="mt-5 rounded-2xl bg-white/5 p-4 text-sm leading-6 text-slate-300">
-        {recommendation.notes.map((note) => (
-          <p key={note}>※ {note}</p>
-        ))}
-      </div>
+      {notes.length > 0 && (
+        <div className="mt-5 rounded-2xl bg-white/5 p-4 text-sm leading-6 text-slate-300">
+          {notes.map((note) => (
+            <p key={note}>※ {note}</p>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
