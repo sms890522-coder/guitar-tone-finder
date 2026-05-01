@@ -161,8 +161,10 @@ def analyze_audio(path: str) -> dict[str, Any]:
         + 0.20 * _score(air_fizz_energy, 0.01, 0.16)
     )
 
-    # 리버브/공간감 추정 v3
-    # 핵심: sustain이 긴 드라이 기타톤을 리버브로 오판하지 않도록 ambience를 강하게 보정한다.
+    # 리버브/공간감 추정 v4
+    # 핵심:
+    # - 드라이한 긴 서스테인/컴프레션 기타톤을 리버브로 오판하지 않도록 더 보수적으로 계산
+    # - 리버브는 "어택 이후 후반부 tail"과 "저레벨 잔향 에너지"가 동시에 높을 때만 높게 평가
     rms_safe = rms + 1e-9
 
     # sustain 후보: RMS가 일정하게 유지되면 높아짐
@@ -180,7 +182,7 @@ def analyze_audio(path: str) -> dict[str, Any]:
         + 0.20 * _score(rms_mean, 0.015, 0.16)
     )
 
-    # onset 이후 tail 비율 측정
+    # onset 이후 tail 측정
     onset_frames = librosa.onset.onset_detect(
         y=y,
         sr=sr,
@@ -190,12 +192,13 @@ def analyze_audio(path: str) -> dict[str, Any]:
     )
 
     tail_ratios = []
+    decay_slopes = []
 
-    for frame in onset_frames[:40]:
+    for frame in onset_frames[:45]:
         start = int(frame)
-        end = min(start + 55, len(rms_safe))
+        end = min(start + 70, len(rms_safe))
 
-        if end <= start + 10:
+        if end <= start + 12:
             continue
 
         segment = rms_safe[start:end]
@@ -204,42 +207,69 @@ def analyze_audio(path: str) -> dict[str, Any]:
         if peak <= 1e-6:
             continue
 
-        # 어택 직후가 아니라 뒤쪽 tail만 본다
-        early = float(np.mean(segment[: max(3, int(len(segment) * 0.20))]))
-        late = float(np.mean(segment[int(len(segment) * 0.65):]))
+        early = float(np.mean(segment[: max(3, int(len(segment) * 0.18))]))
+        middle = float(np.mean(segment[int(len(segment) * 0.35): int(len(segment) * 0.55)]))
+        late = float(np.mean(segment[int(len(segment) * 0.72):]))
 
-        # late가 early/peak 대비 얼마나 남는지
+        # 리버브는 late가 peak 대비 어느 정도 남아야 함
         tail_ratios.append(late / (peak + 1e-9))
 
-    tail_persistence = float(np.mean(tail_ratios)) if tail_ratios else 0.0
+        # 드라이 톤은 early→late가 비교적 빨리 떨어짐
+        # 리버브는 middle→late가 덜 급격하게 떨어지는 경향
+        decay_slope = late / (middle + 1e-9)
+        decay_slopes.append(decay_slope)
 
-    # 전체 RMS 분포 기반 low-level tail
+    tail_persistence = float(np.median(tail_ratios)) if tail_ratios else 0.0
+    tail_decay_smoothness = float(np.median(decay_slopes)) if decay_slopes else 0.0
+
+    # 전체 RMS 분포 기반 저레벨 tail
     rms_95 = float(np.percentile(rms_safe, 95))
     rms_20 = float(np.percentile(rms_safe, 20))
-    global_tail_ratio = rms_20 / (rms_95 + 1e-9)
+    rms_10 = float(np.percentile(rms_safe, 10))
 
-    # 리버브 후보 점수
+    global_tail_ratio = rms_20 / (rms_95 + 1e-9)
+    low_floor_ratio = rms_10 / (rms_95 + 1e-9)
+
+    # 리버브 후보 점수: threshold를 높여 더 보수적으로 잡음
     reverb_candidate = (
-        0.60 * _score(tail_persistence, 0.18, 0.65)
-        + 0.40 * _score(global_tail_ratio, 0.10, 0.42)
+        0.45 * _score(tail_persistence, 0.28, 0.72)
+        + 0.25 * _score(tail_decay_smoothness, 0.35, 0.88)
+        + 0.20 * _score(global_tail_ratio, 0.18, 0.48)
+        + 0.10 * _score(low_floor_ratio, 0.06, 0.25)
     )
 
-    # 드라이 롱서스테인 오판 방지
-    # sustain/compression/distortion이 높으면 ambience를 강하게 깎는다.
+    # 드라이 롱서스테인 오판 방지 페널티
     dryness_penalty = 0.0
 
-    dryness_penalty += sustain_like * 0.55
-    dryness_penalty += compression_like * 0.30
-    dryness_penalty += distortion_like * 0.25
+    # sustain/compression/distortion이 높으면 reverb보다 dry sustain일 가능성이 큼
+    dryness_penalty += sustain_like * 0.70
+    dryness_penalty += compression_like * 0.40
+    dryness_penalty += distortion_like * 0.30
 
-    # tail_persistence가 충분히 높지 않으면 리버브로 보기 어렵다.
-    if tail_persistence < 0.30:
-        dryness_penalty += 2.5
+    # tail 조건이 충분히 강하지 않으면 추가 페널티
+    if tail_persistence < 0.38:
+        dryness_penalty += 2.0
 
-    if global_tail_ratio < 0.20:
+    if tail_decay_smoothness < 0.48:
+        dryness_penalty += 1.5
+
+    if global_tail_ratio < 0.24:
+        dryness_penalty += 1.2
+
+    # 아주 드라이한 톤에서 흔한 패턴:
+    # sustain은 높은데 low-level floor는 낮음 → ambience 강하게 낮춤
+    if sustain_like >= 6.0 and global_tail_ratio < 0.30:
+        dryness_penalty += 2.0
+
+    if distortion_like >= 6.0 and tail_persistence < 0.45:
         dryness_penalty += 1.5
 
     ambience = reverb_candidate - dryness_penalty
+
+    # 낮은 리버브 후보는 더 강하게 눌러서 드라이 톤이 4~5로 뜨는 문제를 줄임
+    if reverb_candidate < 5.0:
+        ambience *= 0.55
+
     ambience = _clamp(ambience)
     # 새 점수들
     distortion = (
