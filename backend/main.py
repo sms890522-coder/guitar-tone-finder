@@ -8,7 +8,7 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
 from analyzer import analyze_audio
-from recommender import recommend
+from recommender import recommend_tone
 
 app = FastAPI(title="Guitar Tone Finder API")
 
@@ -17,11 +17,18 @@ MAX_FILE_SIZE = 25 * 1024 * 1024  # 25MB
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:3000").split(","),
+    allow_origins=[
+
+        "http://localhost:3000",
+
+        "https://guitar-tone-finder.vercel.app",
+
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 
 @app.get("/health")
@@ -45,7 +52,7 @@ async def analyze(file: UploadFile = File(...)):
 
     try:
         analysis = analyze_audio(tmp_path)
-        rec = recommend(analysis)
+        rec = recommend_tone(analysis)
         return {"analysis": analysis, "recommendation": rec}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"분석에 실패했습니다: {exc}") from exc
