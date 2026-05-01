@@ -11,35 +11,82 @@ type Scores = {
   compression: number;
   roughness: number;
   ambience: number;
+  distortion: number;
+  pick_attack: number;
+  sustain: number;
+  fizz: number;
+  presence: number;
+};
+
+type EqProfile = {
+  low: number;
+  low_mid: number;
+  mid: number;
+  high_mid: number;
+  presence: number;
+  air_fizz: number;
+};
+
+type Recommendation = {
+  tone_type: string;
+  tone_summary: string;
+  confidence: number;
+  amp_family: string;
+  amp_examples: string[];
+  amp_reason: string;
+  drive: {
+    type: string;
+    drive: number;
+    tone: number;
+    level: number;
+    purpose: string;
+  };
+  amp_settings: Record<string, number>;
+  cabinet: {
+    cab: string;
+    mic: string;
+    tip: string;
+  };
+  ambience: {
+    reverb: string;
+    reverb_mix: number;
+    delay: string;
+    delay_mix: number;
+    tip: string;
+  };
+  eq_tips: string[];
+  chain: string[];
+  notes: string[];
 };
 
 type Result = {
+  ok: boolean;
+  filename: string;
   analysis: {
     stats: Record<string, number>;
     scores: Scores;
+    eq_profile: EqProfile;
   };
-  recommendation: {
-    tone_type: string;
-    summary: string;
-    chain: string[];
-    amp: string;
-    drive: string;
-    cab: string;
-    settings: Record<string, number>;
-    disclaimer: string;
-  };
+  recommendation: Recommendation;
 };
 
 const scoreLabels: Array<[keyof Scores, string, string]> = [
-  ['gain', 'Gain', '드라이브/왜곡감'],
+  ['gain', 'Gain', '드라이브/출력감'],
   ['brightness', 'Brightness', '밝기/고역감'],
   ['warmth', 'Warmth', '따뜻한 저중역'],
   ['mid_focus', 'Mid Focus', '미드 존재감'],
   ['low_tightness', 'Low Tightness', '저음 타이트함'],
   ['compression', 'Compression', '압축감'],
   ['roughness', 'Roughness', '거친 질감'],
-  ['ambience', 'Ambience', '공간계 힌트'],
+  ['ambience', 'Ambience', '공간감 추정'],
+  ['distortion', 'Distortion', '왜곡/새츄레이션'],
+  ['pick_attack', 'Pick Attack', '피킹 어택'],
+  ['sustain', 'Sustain', '서스테인'],
+  ['fizz', 'Fizz', '고역 지글거림'],
+  ['presence', 'Presence', '존재감/상중역'],
 ];
+
+const MAX_FILE_SIZE = 25 * 1024 * 1024;
 
 export default function Home() {
   const [file, setFile] = useState<File | null>(null);
@@ -55,6 +102,11 @@ export default function Home() {
       return;
     }
 
+    if (file.size > MAX_FILE_SIZE) {
+      setError('파일이 너무 큽니다. 25MB 이하의 MP3 또는 WAV 파일을 업로드해 주세요.');
+      return;
+    }
+
     setLoading(true);
     setError('');
     setResult(null);
@@ -63,14 +115,21 @@ export default function Home() {
     formData.append('file', file);
 
     try {
-      const response = await fetch('/api/analyze', {
+      const API_BASE_URL = 'https://guitar-tone-finder-api.onrender.com';
+
+      const response = await fetch(`${API_BASE_URL}/analyze`, {
         method: 'POST',
         body: formData,
       });
+
       const data = await response.json();
+
+      console.log('ANALYZE RESULT:', data);
+
       if (!response.ok) {
         throw new Error(data.detail || '분석에 실패했습니다.');
       }
+
       setResult(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : '알 수 없는 오류가 발생했습니다.');
@@ -84,25 +143,34 @@ export default function Home() {
       <section className="mx-auto max-w-6xl">
         <nav className="mb-10 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="grid h-11 w-11 place-items-center rounded-2xl bg-white text-xl text-slate-950 shadow-glow">ϟ</div>
+            <div className="grid h-11 w-11 place-items-center rounded-2xl bg-white text-xl text-slate-950 shadow-glow">
+              ϟ
+            </div>
             <div>
               <p className="text-sm text-slate-400">Guitar Tone Analyzer</p>
               <h1 className="text-xl font-black tracking-tight">ToneScope AI</h1>
             </div>
           </div>
-          <div className="rounded-full border border-white/10 px-4 py-2 text-xs text-slate-300">MVP v1 · Upload Audio</div>
+          <div className="rounded-full border border-white/10 px-4 py-2 text-xs text-slate-300">
+            MVP v2 · Improved Analysis
+          </div>
         </nav>
 
         <div className="grid gap-6 lg:grid-cols-[1.05fr_.95fr]">
           <section className="glass rounded-[2rem] p-6 shadow-2xl md:p-9">
             <div className="mb-7 inline-flex rounded-full bg-indigo-400/10 px-4 py-2 text-sm text-indigo-200 ring-1 ring-indigo-300/20">
-              MP3 · WAV · M4A · FLAC · 60초까지 분석
+              MP3 · WAV · M4A · FLAC · 25MB 이하 권장
             </div>
+
             <h2 className="text-4xl font-black leading-tight tracking-tight md:text-6xl">
-              기타톤을 업로드하면<br />비슷한 세팅을 찾아줘요.
+              기타톤을 업로드하면
+              <br />
+              비슷한 세팅을 찾아줘요.
             </h2>
+
             <p className="mt-5 max-w-2xl text-base leading-8 text-slate-300 md:text-lg">
-              오디오 특징을 분석해서 게인, 밝기, 미드, 컴프레션, 공간감 점수를 만들고 앰프·드라이브·캐비넷 추천 체인을 생성합니다.
+              오디오 특징을 분석해서 게인, 밝기, 미드, 컴프레션, 피킹 어택, 서스테인, fizz,
+              presence를 계산하고 앰프·드라이브·캐비넷 추천 체인을 생성합니다.
             </p>
 
             <label className="mt-8 flex cursor-pointer flex-col items-center justify-center rounded-[1.5rem] border border-dashed border-slate-500/70 bg-slate-950/40 px-6 py-10 text-center transition hover:border-indigo-300 hover:bg-indigo-400/10">
@@ -118,7 +186,9 @@ export default function Home() {
               />
               <span className="text-5xl">🎸</span>
               <strong className="mt-4 text-lg">오디오 파일 선택</strong>
-              <span className="mt-2 text-sm text-slate-400">권장: 기타가 잘 들리는 15~60초 클립</span>
+              <span className="mt-2 text-sm text-slate-400">
+                권장: 기타가 잘 들리는 15~60초 클립 / 25MB 이하
+              </span>
             </label>
 
             {file && (
@@ -126,7 +196,9 @@ export default function Home() {
                 <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                   <div>
                     <p className="font-semibold">{file.name}</p>
-                    <p className="text-sm text-slate-400">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
+                    <p className="text-sm text-slate-400">
+                      {(file.size / 1024 / 1024).toFixed(2)} MB
+                    </p>
                   </div>
                   <audio className="w-full md:w-72" controls src={previewUrl} />
                 </div>
@@ -141,15 +213,24 @@ export default function Home() {
               {loading ? '분석 중...' : '톤 분석 시작'}
             </button>
 
-            {error && <p className="mt-4 rounded-xl bg-rose-500/15 p-4 text-sm text-rose-100">{error}</p>}
+            {error && (
+              <p className="mt-4 rounded-xl bg-rose-500/15 p-4 text-sm text-rose-100">
+                {error}
+              </p>
+            )}
           </section>
 
           <section className="glass rounded-[2rem] p-6 md:p-8">
             {!result ? (
               <div className="flex h-full min-h-[520px] flex-col justify-center rounded-[1.5rem] border border-white/10 bg-white/[0.03] p-8 text-center">
-                <div className="mx-auto grid h-24 w-24 place-items-center rounded-3xl bg-white text-5xl text-slate-950 shadow-glow">♫</div>
+                <div className="mx-auto grid h-24 w-24 place-items-center rounded-3xl bg-white text-5xl text-slate-950 shadow-glow">
+                  ♫
+                </div>
                 <h3 className="mt-7 text-2xl font-black">분석 결과가 여기에 표시됩니다</h3>
-                <p className="mt-3 text-slate-400">처음 버전은 실제 장비명을 맞히는 게 아니라, 비슷한 톤을 만들기 위한 출발점 세팅을 추천합니다.</p>
+                <p className="mt-3 text-slate-400">
+                  실제 장비명을 완벽히 맞히는 것이 아니라, 비슷한 톤을 만들기 위한 출발점
+                  세팅을 추천합니다.
+                </p>
               </div>
             ) : (
               <ResultPanel result={result} />
@@ -162,15 +243,40 @@ export default function Home() {
 }
 
 function ResultPanel({ result }: { result: Result }) {
-  const { scores } = result.analysis;
-  const { recommendation } = result;
+  const scores = result.analysis.scores;
+  const eqProfile = result.analysis.eq_profile;
+  const recommendation = result.recommendation;
 
   return (
     <div>
       <div className="rounded-[1.5rem] bg-white p-6 text-slate-950">
-        <p className="text-sm font-bold uppercase tracking-[0.25em] text-indigo-600">Tone Type</p>
-        <h3 className="mt-2 text-2xl font-black">{recommendation.tone_type}</h3>
-        <p className="mt-3 leading-7 text-slate-700">{recommendation.summary}</p>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-sm font-bold uppercase tracking-[0.25em] text-indigo-600">
+              Tone Type
+            </p>
+            <h3 className="mt-2 text-2xl font-black">{recommendation.tone_type}</h3>
+          </div>
+          <div className="rounded-full bg-slate-950 px-3 py-2 text-xs font-black text-white">
+            {recommendation.confidence}% confidence
+          </div>
+        </div>
+
+        <p className="mt-3 leading-7 text-slate-700">{recommendation.tone_summary}</p>
+
+        <div className="mt-5 rounded-2xl bg-slate-100 p-4">
+          <p className="text-xs font-bold uppercase text-slate-500">Recommended Amp</p>
+          <p className="mt-1 text-lg font-black">{recommendation.amp_family}</p>
+          <p className="mt-2 text-sm leading-6 text-slate-600">{recommendation.amp_reason}</p>
+
+          <div className="mt-3 flex flex-wrap gap-2">
+            {recommendation.amp_examples.map((amp) => (
+              <span key={amp} className="rounded-full bg-white px-3 py-1 text-xs font-bold">
+                {amp}
+              </span>
+            ))}
+          </div>
+        </div>
       </div>
 
       <div className="mt-5 space-y-3">
@@ -180,10 +286,25 @@ function ResultPanel({ result }: { result: Result }) {
       </div>
 
       <div className="mt-6 rounded-[1.5rem] bg-white/5 p-5">
+        <h4 className="font-black">EQ Profile</h4>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          {Object.entries(eqProfile).map(([key, value]) => (
+            <div key={key} className="rounded-2xl bg-white/5 p-4">
+              <p className="text-xs uppercase text-slate-400">{key.replaceAll('_', ' ')}</p>
+              <p className="mt-1 text-2xl font-black">{Number(value).toFixed(2)}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-6 rounded-[1.5rem] bg-white/5 p-5">
         <h4 className="font-black">추천 시그널 체인</h4>
         <div className="mt-4 flex flex-wrap gap-2">
           {recommendation.chain.map((item) => (
-            <span key={item} className="rounded-full bg-indigo-400/15 px-3 py-2 text-xs text-indigo-100 ring-1 ring-indigo-300/20">
+            <span
+              key={item}
+              className="rounded-full bg-indigo-400/15 px-3 py-2 text-xs text-indigo-100 ring-1 ring-indigo-300/20"
+            >
               {item}
             </span>
           ))}
@@ -191,22 +312,55 @@ function ResultPanel({ result }: { result: Result }) {
       </div>
 
       <div className="mt-6 grid gap-3 sm:grid-cols-2">
-        {Object.entries(recommendation.settings).map(([key, value]) => (
-          <div key={key} className="rounded-2xl bg-white/5 p-4">
-            <p className="text-xs uppercase text-slate-400">{key.replaceAll('_', ' ')}</p>
-            <p className="mt-1 text-2xl font-black">{value}</p>
-          </div>
-        ))}
+        <InfoCard title="Drive" main={recommendation.drive.type} body={recommendation.drive.purpose} />
+        <InfoCard title="Cabinet" main={recommendation.cabinet.cab} body={recommendation.cabinet.tip} />
+        <InfoCard title="Mic" main={recommendation.cabinet.mic} body="추천 마이크/IR 방향" />
+        <InfoCard title="Ambience" main={recommendation.ambience.reverb} body={recommendation.ambience.tip} />
       </div>
 
-      <p className="mt-5 rounded-2xl bg-amber-400/10 p-4 text-sm leading-6 text-amber-100 ring-1 ring-amber-300/10">
-        {recommendation.disclaimer}
-      </p>
+      <div className="mt-6 rounded-[1.5rem] bg-white/5 p-5">
+        <h4 className="font-black">추천 앰프 세팅</h4>
+        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+          {Object.entries(recommendation.amp_settings).map(([key, value]) => (
+            <div key={key} className="rounded-2xl bg-white/5 p-4">
+              <p className="text-xs uppercase text-slate-400">{key.replaceAll('_', ' ')}</p>
+              <p className="mt-1 text-2xl font-black">{value}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-6 rounded-[1.5rem] bg-amber-400/10 p-5 ring-1 ring-amber-300/10">
+        <h4 className="font-black text-amber-100">EQ 보정 팁</h4>
+        <ul className="mt-3 space-y-2 text-sm leading-6 text-amber-100">
+          {recommendation.eq_tips.map((tip) => (
+            <li key={tip}>• {tip}</li>
+          ))}
+        </ul>
+      </div>
+
+      <div className="mt-5 rounded-2xl bg-white/5 p-4 text-sm leading-6 text-slate-300">
+        {recommendation.notes.map((note) => (
+          <p key={note}>※ {note}</p>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function InfoCard({ title, main, body }: { title: string; main: string; body: string }) {
+  return (
+    <div className="rounded-2xl bg-white/5 p-4">
+      <p className="text-xs uppercase text-slate-400">{title}</p>
+      <p className="mt-1 font-black">{main}</p>
+      <p className="mt-2 text-xs leading-5 text-slate-400">{body}</p>
     </div>
   );
 }
 
 function ScoreBar({ title, desc, value }: { title: string; desc: string; value: number }) {
+  const safeValue = Number.isFinite(value) ? value : 0;
+
   return (
     <div className="rounded-2xl bg-white/5 p-4">
       <div className="mb-2 flex items-end justify-between gap-3">
@@ -214,10 +368,13 @@ function ScoreBar({ title, desc, value }: { title: string; desc: string; value: 
           <p className="font-bold">{title}</p>
           <p className="text-xs text-slate-400">{desc}</p>
         </div>
-        <p className="text-xl font-black">{value.toFixed(1)}</p>
+        <p className="text-xl font-black">{safeValue.toFixed(1)}</p>
       </div>
       <div className="h-2 overflow-hidden rounded-full bg-slate-800">
-        <div className="meter-bg h-full rounded-full" style={{ width: `${Math.max(0, Math.min(100, value * 10))}%` }} />
+        <div
+          className="meter-bg h-full rounded-full"
+          style={{ width: `${Math.max(0, Math.min(100, safeValue * 10))}%` }}
+        />
       </div>
     </div>
   );
