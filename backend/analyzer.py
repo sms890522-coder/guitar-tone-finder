@@ -161,21 +161,26 @@ def analyze_audio(path: str) -> dict[str, Any]:
         + 0.20 * _score(air_fizz_energy, 0.01, 0.16)
     )
 
-    # 리버브/공간감 추정 개선 v2
-    # 주의: 기타의 긴 서스테인/컴프레션을 리버브로 착각하지 않도록 보정한다.
+    # 리버브/공간감 추정 v3
+    # 핵심: sustain이 긴 드라이 기타톤을 리버브로 오판하지 않도록 ambience를 강하게 보정한다.
     rms_safe = rms + 1e-9
 
-    # 프레임 간 에너지 변화가 부드러우면 tail 또는 sustain 가능성이 있음
-    rms_delta = np.abs(np.diff(rms_safe))
-    smooth_energy = 1.0 - (float(np.mean(rms_delta)) / (float(np.mean(rms_safe)) + 1e-9))
-    smooth_energy = _clamp(smooth_energy, 0.0, 1.0)
+    # sustain 후보: RMS가 일정하게 유지되면 높아짐
+    sustain_raw_for_space = rms_mean / (rms_std + 1e-9)
+    sustain_like = _score(sustain_raw_for_space, 1.2, 8.0)
 
-    # 낮은 레벨 에너지가 얼마나 지속되는지
-    rms_90 = float(np.percentile(rms_safe, 90))
-    rms_30 = float(np.percentile(rms_safe, 30))
-    tail_ratio = rms_30 / (rms_90 + 1e-9)
+    # compression 후보
+    compression_raw_for_space = 1.0 - (dynamic_range / (rms_mean + 1e-9))
+    compression_like = _score(compression_raw_for_space, 0.05, 0.85)
 
-    # Onset 이후 tail 추정
+    # distortion 후보
+    distortion_like = (
+        0.50 * _score(flatness_mean, 0.003, 0.08)
+        + 0.30 * _score(zcr_mean, 0.025, 0.16)
+        + 0.20 * _score(rms_mean, 0.015, 0.16)
+    )
+
+    # onset 이후 tail 비율 측정
     onset_frames = librosa.onset.onset_detect(
         y=y,
         sr=sr,
@@ -184,70 +189,57 @@ def analyze_audio(path: str) -> dict[str, Any]:
         backtrack=False,
     )
 
-    tail_scores = []
+    tail_ratios = []
 
-    for frame in onset_frames[:30]:
+    for frame in onset_frames[:40]:
         start = int(frame)
-        end = min(start + 45, len(rms_safe))
-        if end <= start + 5:
+        end = min(start + 55, len(rms_safe))
+
+        if end <= start + 10:
             continue
 
         segment = rms_safe[start:end]
         peak = float(np.max(segment))
 
-        # 후반부 tail
-        tail = float(np.mean(segment[int(len(segment) * 0.55):]))
+        if peak <= 1e-6:
+            continue
 
-        if peak > 1e-6:
-            tail_scores.append(tail / peak)
+        # 어택 직후가 아니라 뒤쪽 tail만 본다
+        early = float(np.mean(segment[: max(3, int(len(segment) * 0.20))]))
+        late = float(np.mean(segment[int(len(segment) * 0.65):]))
 
-    tail_persistence = float(np.mean(tail_scores)) if tail_scores else tail_ratio
+        # late가 early/peak 대비 얼마나 남는지
+        tail_ratios.append(late / (peak + 1e-9))
 
-    # tail 기반 공간감 후보 점수
-    ambience_candidate = (
-        0.45 * _score(tail_persistence, 0.10, 0.58)
-        + 0.30 * _score(tail_ratio, 0.10, 0.48)
-        + 0.25 * _score(smooth_energy, 0.60, 0.98)
+    tail_persistence = float(np.mean(tail_ratios)) if tail_ratios else 0.0
+
+    # 전체 RMS 분포 기반 low-level tail
+    rms_95 = float(np.percentile(rms_safe, 95))
+    rms_20 = float(np.percentile(rms_safe, 20))
+    global_tail_ratio = rms_20 / (rms_95 + 1e-9)
+
+    # 리버브 후보 점수
+    reverb_candidate = (
+        0.60 * _score(tail_persistence, 0.18, 0.65)
+        + 0.40 * _score(global_tail_ratio, 0.10, 0.42)
     )
 
-    # sustain / compression / distortion 후보 점수
-    # 이 값들이 높으면 리버브가 아니라 기타 자체의 긴 sustain일 가능성이 커진다.
-    sustain_raw_for_space = rms_mean / (rms_std + 1e-9)
-    sustain_like = _score(sustain_raw_for_space, 1.2, 8.0)
+    # 드라이 롱서스테인 오판 방지
+    # sustain/compression/distortion이 높으면 ambience를 강하게 깎는다.
+    dryness_penalty = 0.0
 
-    compression_raw_for_space = 1.0 - (dynamic_range / (rms_mean + 1e-9))
-    compression_like = _score(compression_raw_for_space, 0.05, 0.85)
+    dryness_penalty += sustain_like * 0.55
+    dryness_penalty += compression_like * 0.30
+    dryness_penalty += distortion_like * 0.25
 
-    distortion_like = (
-        0.50 * _score(flatness_mean, 0.003, 0.08)
-        + 0.30 * _score(zcr_mean, 0.025, 0.16)
-        + 0.20 * _score(rms_mean, 0.015, 0.16)
-    )
+    # tail_persistence가 충분히 높지 않으면 리버브로 보기 어렵다.
+    if tail_persistence < 0.30:
+        dryness_penalty += 2.5
 
-    # 어택이 뚜렷하고 tail이 빠르게 정리되면 리버브 가능성을 낮춘다.
-    attack_clarity = _score(attack_raw, 0.3, 6.0)
+    if global_tail_ratio < 0.20:
+        dryness_penalty += 1.5
 
-    # 하이게인/컴프/서스테인이 강할수록 ambience 과대평가를 줄인다.
-    dry_sustain_penalty = 0.0
-
-    if sustain_like >= 7.0 and compression_like >= 6.0:
-        dry_sustain_penalty += 2.2
-
-    if distortion_like >= 6.5 and sustain_like >= 6.5:
-        dry_sustain_penalty += 1.6
-
-    if attack_clarity >= 6.5 and tail_ratio < 0.35:
-        dry_sustain_penalty += 1.2
-
-    # 리버브는 보통 tail_ratio와 tail_persistence가 동시에 높아야 한다.
-    # 둘 중 하나만 높으면 sustain으로 판단할 가능성이 크다.
-    if tail_ratio < 0.22:
-        dry_sustain_penalty += 1.5
-
-    if tail_persistence < 0.22:
-        dry_sustain_penalty += 1.2
-
-    ambience = ambience_candidate - dry_sustain_penalty
+    ambience = reverb_candidate - dryness_penalty
     ambience = _clamp(ambience)
     # 새 점수들
     distortion = (
