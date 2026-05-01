@@ -4,7 +4,7 @@ export const runtime = 'nodejs';
 export const maxDuration = 60;
 
 export async function POST(request: Request) {
-  const backendUrl = process.env.BACKEND_URL || 'http://localhost:8000';
+  const backendUrl = process.env.BACKEND_URL || 'https://guitar-tone-finder-api.onrender.com';
   const formData = await request.formData();
 
   const response = await fetch(`${backendUrl}/analyze`, {
