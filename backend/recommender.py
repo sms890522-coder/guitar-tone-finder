@@ -250,29 +250,48 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
     # -----------------------------
     # 7. 공간계 추천
     # -----------------------------
-    if ambience >= 7.0 and sustain >= 6.0:
+    # ambience는 공간감/잔향 가능성 점수.
+    # sustain 조건에 너무 의존하면 강한 리버브도 Room으로만 나오는 문제가 있어서
+    # ambience 중심으로 더 세분화한다.
+    if ambience >= 8.2:
         ambience_recommendation = {
-            "reverb": "Plate 또는 Hall Reverb",
-            "reverb_mix": 18,
-            "delay": "Analog/Quarter Delay",
-            "delay_mix": 12,
-            "tip": "리드톤 성향이 강하므로 리버브와 딜레이를 적당히 더하면 솔로톤이 넓어집니다.",
+            "reverb": "Large Hall / Ambient Reverb",
+            "reverb_mix": 28,
+            "delay": "Stereo Delay 또는 Dotted 8th Delay",
+            "delay_mix": 14,
+            "tip": "잔향이 매우 큰 톤 성향입니다. Hall, Ambient, Shimmer 계열처럼 긴 tail을 가진 리버브가 잘 맞습니다.",
         }
-    elif ambience >= 5.0:
+    elif ambience >= 6.8:
         ambience_recommendation = {
-            "reverb": "Room Reverb",
+            "reverb": "Plate Reverb / Medium Hall",
+            "reverb_mix": 20,
+            "delay": "Quarter Delay 또는 Analog Delay",
+            "delay_mix": 10,
+            "tip": "공간감이 꽤 있는 톤입니다. Plate나 Medium Hall로 넓이를 만들고, 딜레이는 과하지 않게 섞는 편이 좋습니다.",
+        }
+    elif ambience >= 4.8:
+        ambience_recommendation = {
+            "reverb": "Room Reverb / Small Plate",
             "reverb_mix": 10,
             "delay": "Slapback 또는 짧은 Delay",
-            "delay_mix": 6,
-            "tip": "공간감은 살리되 리듬 선명도를 해치지 않는 짧은 공간계가 좋습니다.",
+            "delay_mix": 5,
+            "tip": "약간의 공간감이 있는 톤입니다. 짧은 Room이나 Small Plate 정도가 잘 맞습니다.",
         }
-    else:
+    elif ambience >= 2.5:
         ambience_recommendation = {
             "reverb": "Small Room",
             "reverb_mix": 5,
             "delay": "Off 또는 매우 약하게",
             "delay_mix": 0,
-            "tip": "건조하고 직접적인 톤 성향입니다. 공간계는 최소화하는 편이 잘 맞습니다.",
+            "tip": "대체로 드라이한 톤입니다. 공간계는 Small Room 정도로 살짝만 더하는 편이 좋습니다.",
+        }
+    else:
+        ambience_recommendation = {
+            "reverb": "Dry / Reverb Off",
+            "reverb_mix": 0,
+            "delay": "Off",
+            "delay_mix": 0,
+            "tip": "거의 드라이한 톤입니다. 원음의 어택과 선명도를 살리려면 리버브를 끄거나 최소화하세요.",
         }
 
     # -----------------------------
