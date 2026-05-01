@@ -176,7 +176,7 @@ export default function Home() {
             <label className="mt-8 flex cursor-pointer flex-col items-center justify-center rounded-[1.5rem] border border-dashed border-slate-500/70 bg-slate-950/40 px-6 py-10 text-center transition hover:border-indigo-300 hover:bg-indigo-400/10">
               <input
                 type="file"
-                accept="audio/*"
+                accept=".mp3,.wav,.m4a,.aac,.flac,.ogg,audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/mp4,audio/aac,audio/flac,audio/ogg"
                 className="hidden"
                 onChange={(event) => {
                   setFile(event.target.files?.[0] || null);
