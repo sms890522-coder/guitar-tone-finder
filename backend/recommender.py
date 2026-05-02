@@ -64,6 +64,32 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
     fizz = _get_score(scores, "fizz")
     presence = _get_score(scores, "presence", brightness)
 
+    # 실제 분류용 드라이브 강도
+    # gain 하나만 보면 녹음 볼륨/압축 상태 때문에 하이게인을 클린으로 오판할 수 있어서
+    # distortion, roughness, compression, fizz, sustain을 함께 본다.
+    drive_intensity = _clamp(
+        0.28 * gain
+        + 0.30 * distortion
+        + 0.20 * roughness
+        + 0.12 * compression
+        + 0.06 * fizz
+        + 0.04 * sustain
+    )
+
+    # 하이게인 보정
+    # gain이 낮게 잡혀도 왜곡/거칠기/압축이 높으면 실제로는 드라이브 톤으로 본다.
+    if distortion >= 6.5 and roughness >= 5.5:
+        drive_intensity = max(drive_intensity, 7.0)
+
+    if distortion >= 7.5 or roughness >= 7.5:
+        drive_intensity = max(drive_intensity, 7.4)
+
+    if compression >= 7.0 and distortion >= 5.8:
+        drive_intensity = max(drive_intensity, 6.8)
+
+    if fizz >= 7.0 and distortion >= 5.5:
+        drive_intensity = max(drive_intensity, 6.7)
+
     body = _get_score(scores, "body", warmth)
     mud = _get_score(scores, "mud", 0.0)
     core_mid = _get_score(scores, "core_mid", mid_focus)
@@ -81,29 +107,50 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
     # -----------------------------
     # 1. 톤 타입 분류
     # -----------------------------
-    if gain >= 7.2 and low_tightness >= 6.0 and mid_focus >= 5.5:
-        tone_type = "Tight Modern Rock / Metal Rhythm"
-        tone_summary = "게인이 높고 저음이 비교적 타이트한 리듬톤 성향입니다."
-    elif gain >= 7.0 and sustain >= 6.5 and mid_focus >= 5.0:
+    # gain보다 drive_intensity를 우선 사용한다.
+    # 이유: 하이게인 톤도 녹음 볼륨이 낮으면 gain 점수가 낮게 나올 수 있음.
+
+    if drive_intensity >= 7.4 and low_tightness >= 6.0 and mid_focus >= 5.0:
+        tone_type = "Tight Modern High-Gain Rhythm"
+        tone_summary = "왜곡감과 타이트함이 강한 모던 하이게인 리듬톤 성향입니다."
+
+    elif drive_intensity >= 7.2 and sustain >= 6.0:
         tone_type = "Singing High-Gain Lead"
-        tone_summary = "서스테인과 게인이 높은 리드톤 성향입니다."
-    elif gain >= 5.0 and mid_focus >= 6.0:
+        tone_summary = "왜곡감과 서스테인이 강한 하이게인 리드톤 성향입니다."
+
+    elif drive_intensity >= 6.4 and scoop >= 6.0:
+        tone_type = "Scooped Modern High-Gain"
+        tone_summary = "미드가 살짝 빠지고 저역/고역이 강조된 모던 하이게인 성향입니다."
+
+    elif drive_intensity >= 6.0 and mid_focus >= 6.0:
+        tone_type = "British High-Gain / Hard Rock"
+        tone_summary = "중음이 살아 있고 왜곡감이 강한 브리티시 하드록/하이게인 성향입니다."
+
+    elif drive_intensity >= 5.0 and mid_focus >= 6.0:
         tone_type = "British Crunch / Classic Rock"
         tone_summary = "중음이 앞으로 나온 브리티시 크런치 계열 성향입니다."
-    elif gain >= 5.0 and mid_focus < 5.0:
-        tone_type = "Scooped Modern Drive"
-        tone_summary = "중음이 살짝 빠지고 저역/고역이 강조된 모던 드라이브 성향입니다."
-    elif gain < 4.0 and brightness >= 6.0:
-        tone_type = "Bright Clean / Edge of Breakup"
-        tone_summary = "밝고 깨끗한 클린 또는 엣지 오브 브레이크업 성향입니다."
-    elif gain < 4.0 and warmth >= 6.0:
-        tone_type = "Warm Clean / Blues Clean"
-        tone_summary = "따뜻하고 부드러운 클린톤 성향입니다."
-    else:
-        tone_type = "Balanced Guitar Tone"
-        tone_summary = "특정 성향이 과하게 치우치지 않은 밸런스형 기타톤입니다."
 
-        # -----------------------------
+    elif drive_intensity >= 5.0 and mid_focus < 5.5:
+        tone_type = "Modern Drive"
+        tone_summary = "중음이 덜 강조되고 드라이브가 있는 모던 드라이브 성향입니다."
+
+    elif drive_intensity >= 3.5:
+        tone_type = "Edge of Breakup / Light Drive"
+        tone_summary = "클린보다는 살짝 깨지는 엣지 오브 브레이크업 또는 라이트 드라이브 성향입니다."
+
+    elif brightness >= 6.0:
+        tone_type = "Bright Clean"
+        tone_summary = "게인은 낮고 밝은 클린톤 성향입니다."
+
+    elif warmth >= 6.0:
+        tone_type = "Warm Clean"
+        tone_summary = "따뜻하고 부드러운 클린톤 성향입니다."
+
+    else:
+        tone_type = "Balanced Clean / Low Gain"
+        tone_summary = "드라이브가 강하지 않은 밸런스형 클린 또는 로우게인 톤입니다."
+
+    # -----------------------------
     # 2. 앰프 계열 추천 - 세분화 v2
     # -----------------------------
     # 기준:
@@ -114,7 +161,7 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
     # low_tightness: 저음 타이트함
     # sustain: 리드톤/서스테인 성향
 
-    if gain < 3.2:
+    if drive_intensity < 3.2:
         if brightness >= 7.0 and warmth < 5.5:
             amp_family = "American Sparkle Clean"
             amp_model = "Fender Twin Reverb / Deluxe Reverb 계열"
@@ -141,7 +188,7 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
             amp_examples = ["Fender Bassman", "Tweed Deluxe", "Vintage American Clean"]
             amp_reason = "게인은 낮고 따뜻한 성향이 있어 빈티지 클린 앰프와 잘 맞습니다."
 
-    elif gain < 5.2:
+    elif drive_intensity < 5.2:
         if brightness >= 6.7 and mid_focus >= 5.2:
             amp_family = "Vox Edge of Breakup"
             amp_model = "Vox AC30 Breakup / Matchless 계열"
@@ -163,7 +210,7 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
             amp_examples = ["Dumble OD", "Two-Rock Drive", "Fuchs ODS"]
             amp_reason = "중간 게인과 부드러운 반응성 때문에 부티크 오버드라이브 앰프 계열과 잘 맞습니다."
 
-    elif gain < 7.0:
+    elif drive_intensity < 7.0:
         if mid_focus >= 7.0 and brightness < 6.8:
             amp_family = "Marshall JCM800 Crunch"
             amp_model = "JCM800 / JMP Master Volume 계열"
@@ -222,10 +269,10 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
             amp_examples = ["Friedman BE-100", "Marshall JCM800 Hot Rod", "Soldano SLO"]
             amp_reason = "높은 게인과 미드 중심 성향이 핫로드 브리티시 하이게인 계열과 잘 맞습니다."
 
-        # -----------------------------
+    # -----------------------------
     # 3. 드라이브/부스터 추천 - 세분화 v2
     # -----------------------------
-    if gain >= 7.0:
+    if drive_intensity >= 7.0:
         if low_tightness < 5.8:
             drive = {
                 "type": "Tube Screamer Tight Boost",
@@ -263,7 +310,7 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
                 "purpose": "하이게인 톤의 저역을 정리하고 피킹 어택을 선명하게 만드는 용도",
             }
 
-    elif gain >= 5.0:
+    elif drive_intensity >= 5.0:
         if mid_focus >= 7.0:
             drive = {
                 "type": "Klon / Transparent Mid Boost",
@@ -310,7 +357,7 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
                 "purpose": "원톤을 크게 바꾸지 않고 자연스럽게 드라이브를 추가하는 용도",
             }
 
-    elif gain >= 3.2:
+    elif drive_intensity >= 3.2:
         if brightness >= 6.5 and mid_focus >= 5.5:
             drive = {
                 "type": "Treble Booster / Chime Boost",
@@ -615,6 +662,11 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
         tone_traits.append("피킹 어택이 강하고 물리는 느낌이 뚜렷합니다.")
     elif bite <= 3.5:
         tone_traits.append("피킹 어택이 부드럽거나 둥글게 느껴질 수 있습니다.")
+
+    if drive_intensity >= 6.5 and gain < 5.0:
+        tone_traits.append(
+            "녹음 볼륨 기준의 Gain 점수는 낮지만, 왜곡/거칠기/압축 특성이 높아 실제로는 드라이브가 강한 톤으로 판단했습니다."
+        )
 
     return {
         "tone_type": tone_type,
