@@ -299,6 +299,10 @@ function ResultPanel({ result }: { result: Result }) {
   const ampSettings = recommendation.amp_settings || {};
   const drive = recommendation.drive || {
     type: '추천 없음',
+    model_examples: [],
+    drive: 0,
+    tone: 0,
+    level: 0,
     purpose: '드라이브 추천 데이터가 없습니다.',
   };
 
@@ -416,11 +420,22 @@ function ResultPanel({ result }: { result: Result }) {
 
       <div className="mt-6 grid gap-3 sm:grid-cols-2">
         <InfoCard title="Drive" main={drive.type} body={drive.purpose} />
-        {recommendation.drive.model_examples && recommendation.drive.model_examples.length > 0 && (
+
+        <InfoCard title="Cabinet" main={cabinet.cab} body={cabinet.tip} />
+
+        <InfoCard title="Mic" main={cabinet.mic} body="추천 마이크/IR 방향" />
+
+        <InfoCard
+          title={ambience.character || 'Ambience'}
+          main={ambience.reverb}
+          body={ambience.space_note || ambience.tip}
+        />
+
+        {drive.model_examples && drive.model_examples.length > 0 && (
           <div className="rounded-2xl bg-white/5 p-4 sm:col-span-2">
             <p className="text-xs uppercase text-slate-400">Drive Model Examples</p>
             <div className="mt-3 flex flex-wrap gap-2">
-              {recommendation.drive.model_examples.map((model) => (
+              {drive.model_examples.map((model) => (
                 <span
                   key={model}
                   className="rounded-full bg-white/10 px-3 py-1 text-xs text-slate-200"
@@ -429,32 +444,26 @@ function ResultPanel({ result }: { result: Result }) {
                 </span>
               ))}
             </div>
-            <div className="rounded-2xl bg-white/5 p-4 sm:col-span-2">
-              <p className="text-xs uppercase text-slate-400">Drive Settings</p>
-              <div className="mt-3 grid grid-cols-3 gap-3">
-                <div className="rounded-xl bg-white/5 p-3">
-                  <p className="text-xs text-slate-400">Drive</p>
-                  <p className="text-xl font-black">{recommendation.drive.drive}</p>
-                </div>
-                <div className="rounded-xl bg-white/5 p-3">
-                  <p className="text-xs text-slate-400">Tone</p>
-                  <p className="text-xl font-black">{recommendation.drive.tone}</p>
-                </div>
-                <div className="rounded-xl bg-white/5 p-3">
-                  <p className="text-xs text-slate-400">Level</p>
-                  <p className="text-xl font-black">{recommendation.drive.level}</p>
-                </div>
-              </div>
-            </div>                
           </div>
         )}
-        <InfoCard title="Cabinet" main={cabinet.cab} body={cabinet.tip} />
-        <InfoCard title="Mic" main={cabinet.mic} body="추천 마이크/IR 방향" />
-       <InfoCard
-  title={ambience.character || 'Ambience'}
-  main={ambience.reverb}
-  body={ambience.space_note || ambience.tip}
-/>
+
+        <div className="rounded-2xl bg-white/5 p-4 sm:col-span-2">
+          <p className="text-xs uppercase text-slate-400">Drive Settings</p>
+          <div className="mt-3 grid grid-cols-3 gap-3">
+            <div className="rounded-xl bg-white/5 p-3">
+              <p className="text-xs text-slate-400">Drive</p>
+              <p className="text-xl font-black">{Number(drive.drive || 0).toFixed(1)}</p>
+            </div>
+            <div className="rounded-xl bg-white/5 p-3">
+              <p className="text-xs text-slate-400">Tone</p>
+              <p className="text-xl font-black">{Number(drive.tone || 0).toFixed(1)}</p>
+            </div>
+            <div className="rounded-xl bg-white/5 p-3">
+              <p className="text-xs text-slate-400">Level</p>
+              <p className="text-xl font-black">{Number(drive.level || 0).toFixed(1)}</p>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div className="mt-6 rounded-[1.5rem] bg-white/5 p-5">
