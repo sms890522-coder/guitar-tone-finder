@@ -383,7 +383,7 @@ def analyze_audio(path: str) -> dict[str, Any]:
         "air_fizz": round(air_fizz_energy * 10, 2),
     }
 
-     return {
+    return {
         "version": "space-analysis-v5",
         "stats": asdict(stats),
         "scores": asdict(scores),
