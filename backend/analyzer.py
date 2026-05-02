@@ -332,10 +332,40 @@ def analyze_audio(path: str) -> dict[str, Any]:
 
     if distortion >= 6.0 and driven_band_density >= 6.0:
         high_gain_likelihood = max(high_gain_likelihood, 7.0)
+    
+    # 추가 하이게인 보정 v2
+    # fizz가 적어도 중고역 밀도 + 압축 + sustain이 있으면 하이게인 가능성 높음
+    if driven_band_density >= 6.8 and compression >= 5.5 and sustain >= 5.5:
+        high_gain_likelihood = max(high_gain_likelihood, 7.2)
+
+    # 캐비넷/IR로 고역이 정리된 부드러운 하이게인
+    if core_mid >= 6.5 and upper_mid >= 5.5 and compression >= 5.8 and distortion >= 4.8:
+        high_gain_likelihood = max(high_gain_likelihood, 7.0)
+
+    # 미드가 강하고 sustain이 긴 록/리드 하이게인
+    if mid_focus >= 6.5 and sustain >= 6.2 and compression >= 5.5:
+        high_gain_likelihood = max(high_gain_likelihood, 6.9)
+
+    # roughness가 낮아도 compression과 band density가 높으면 드라이브 가능성
+    if roughness < 5.0 and compression >= 6.5 and driven_band_density >= 6.5:
+        high_gain_likelihood = max(high_gain_likelihood, 6.8)
+
+    # 팜뮤트/리프 계열: 타이트함 + bite + 중고역 밀도
+    if low_tightness >= 6.5 and bite >= 5.8 and driven_band_density >= 6.0:
+        high_gain_likelihood = max(high_gain_likelihood, 6.9)
 
     # 클린톤 오판 방지:
     # brightness만 높고 compression/sustain이 낮으면 하이게인으로 올리지 않음
-    if compression < 3.5 and sustain < 4.0 and distortion < 4.5:
+    # 클린톤 보호:
+    # 단순히 compression/sustain/distortion만 낮다고 바로 클린으로 누르지 말고,
+    # 중고역 밀도와 bite도 낮을 때만 클린으로 제한한다.
+    if (
+        compression < 3.5
+        and sustain < 4.0
+        and distortion < 4.5
+        and driven_band_density < 4.5
+        and bite < 4.5
+    ):
         high_gain_likelihood = min(high_gain_likelihood, 4.0)
 
     high_gain_likelihood = _clamp(high_gain_likelihood)

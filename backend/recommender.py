@@ -69,10 +69,10 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
         # 실제 분류용 드라이브 강도
     # gain보다 high_gain_likelihood를 우선한다.
     drive_intensity = _clamp(
-        0.18 * gain
-        + 0.34 * high_gain_likelihood
-        + 0.20 * distortion
-        + 0.14 * roughness
+        0.10 * gain
+        + 0.46 * high_gain_likelihood
+        + 0.18 * distortion
+        + 0.12 * roughness
         + 0.10 * compression
         + 0.04 * sustain
     )
@@ -90,13 +90,26 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
     if roughness >= 6.5 and high_gain_likelihood >= 6.5:
         drive_intensity = max(drive_intensity, 7.2)
 
+    if high_gain_likelihood >= 6.5 and compression >= 5.5:
+        drive_intensity = max(drive_intensity, 6.8)
+
+    if high_gain_likelihood >= 7.0:
+        drive_intensity = max(drive_intensity, 7.4)
+
+    if high_gain_likelihood >= 8.0:
+        drive_intensity = max(drive_intensity, 8.2)
+
     # 클린 보호:
     # high_gain_likelihood, distortion, compression이 전부 낮을 때만 클린으로 허용
     is_probably_clean = (
-        high_gain_likelihood < 4.5
-        and distortion < 4.5
-        and compression < 4.5
-        and roughness < 5.0
+        high_gain_likelihood < 4.2
+        and distortion < 4.2
+        and compression < 4.8
+        and roughness < 4.8
+        and drive_intensity < 4.2
+        and sustain < 5.0
+        and bite < 5.0
+        and clarity < 7.5
     )
 
     body = _get_score(scores, "body", warmth)
@@ -700,4 +713,14 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
             "정확도를 높이려면 기타가 잘 들리는 15~60초 클립을 사용하는 것이 좋습니다.",
             "MP3보다 WAV 파일이 분석 안정성이 더 좋습니다.",
         ],
+        "debug_drive": {
+            "drive_intensity": round(drive_intensity, 2),
+            "high_gain_likelihood": round(high_gain_likelihood, 2),
+            "gain": round(gain, 2),
+            "distortion": round(distortion, 2),
+            "compression": round(compression, 2),
+            "roughness": round(roughness, 2),
+            "sustain": round(sustain, 2),
+            "is_probably_clean": is_probably_clean,
+        },
     }
