@@ -35,11 +35,12 @@ type Recommendation = {
   amp_examples: string[];
   amp_reason: string;
   drive: {
-    type: string;
-    drive: number;
-    tone: number;
-    level: number;
-    purpose: string;
+  type: string;
+  model_examples?: string[];
+  drive: number;
+  tone: number;
+  level: number;
+  purpose: string;
   };
   amp_settings: Record<string, number>;
   cabinet: {
@@ -409,6 +410,18 @@ function ResultPanel({ result }: { result: Result }) {
 
       <div className="mt-6 grid gap-3 sm:grid-cols-2">
         <InfoCard title="Drive" main={drive.type} body={drive.purpose} />
+        {recommendation.drive.model_examples && recommendation.drive.model_examples.length > 0 && (
+          <div className="rounded-2xl bg-white/5 p-4 sm:col-span-2">
+            <p className="text-xs uppercase text-slate-400">Drive Model Examples</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {recommendation.drive.model_examples.map((model) => (
+                <span key={model} className="rounded-full bg-white/10 px-3 py-1 text-xs text-slate-200">
+                  {model}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
         <InfoCard title="Cabinet" main={cabinet.cab} body={cabinet.tip} />
         <InfoCard title="Mic" main={cabinet.mic} body="추천 마이크/IR 방향" />
        <InfoCard

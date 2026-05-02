@@ -94,77 +94,279 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
         tone_type = "Balanced Guitar Tone"
         tone_summary = "특정 성향이 과하게 치우치지 않은 밸런스형 기타톤입니다."
 
+        # -----------------------------
+    # 2. 앰프 계열 추천 - 세분화 v2
     # -----------------------------
-    # 2. 앰프 계열 추천
-    # -----------------------------
-    if gain >= 7.5 and low_tightness >= 6.2 and mid_focus < 5.5:
-        amp_family = "Modern American High-Gain"
-        amp_examples = ["Mesa Rectifier 계열", "Peavey/EVH 5150 계열", "PRS Archon 계열"]
-        amp_reason = "높은 게인, 타이트한 저역, 비교적 넓은 대역감이 모던 하이게인 계열과 잘 맞습니다."
-    elif gain >= 7.0 and mid_focus >= 5.8:
-        amp_family = "Hot-Rodded British High-Gain"
-        amp_examples = ["Marshall JCM800 Hot Rod 계열", "Friedman BE 계열", "Soldano SLO 계열"]
-        amp_reason = "중음이 살아 있고 게인이 높아 브리티시 핫로드 앰프 계열과 잘 맞습니다."
-    elif gain >= 5.0 and mid_focus >= 6.0:
-        amp_family = "British Crunch"
-        amp_examples = ["Marshall Plexi 계열", "JCM800 Crunch 계열", "Orange Rockerverb 계열"]
-        amp_reason = "중음이 앞으로 나오고 드라이브가 적당해 클래식 브리티시 크런치에 가깝습니다."
-    elif gain < 4.5 and brightness >= 6.0:
-        amp_family = "American Clean / Sparkle Clean"
-        amp_examples = ["Fender Twin Reverb 계열", "Deluxe Reverb 계열", "Jazz Chorus Clean 계열"]
-        amp_reason = "게인은 낮고 밝기가 높아 깨끗하고 선명한 클린 앰프와 잘 맞습니다."
-    elif gain < 4.5 and warmth >= 6.0:
-        amp_family = "Warm Vintage Clean"
-        amp_examples = ["Fender Bassman 계열", "Vox AC Clean 계열", "Dumble Clean 계열"]
-        amp_reason = "따뜻한 중저역이 살아 있어 빈티지 클린 계열과 잘 맞습니다."
-    else:
-        amp_family = "Versatile British/American Hybrid"
-        amp_examples = ["Vox AC30 Breakup 계열", "Marshall DSL 계열", "Fender Hot Rod 계열"]
-        amp_reason = "밸런스가 좋아 범용적인 브리티시/아메리칸 하이브리드 계열로 접근하기 좋습니다."
+    # 기준:
+    # gain: 드라이브 양
+    # brightness/presence/fizz: 고역 성향
+    # warmth: 저중역 두께
+    # mid_focus: 미드 존재감
+    # low_tightness: 저음 타이트함
+    # sustain: 리드톤/서스테인 성향
 
-    # -----------------------------
-    # 3. 드라이브/부스터 추천
-    # -----------------------------
-    if gain >= 6.0 and low_tightness < 5.5:
-        drive = {
-            "type": "Tube Screamer 계열",
-            "drive": 1.5,
-            "tone": 4.8 if brightness >= 6.5 else 5.5,
-            "level": 7.5,
-            "purpose": "저음을 조이고 중음을 앞으로 밀어 타이트하게 만드는 용도",
-        }
-    elif gain >= 6.0 and low_tightness >= 5.5:
-        drive = {
-            "type": "Clean Boost / Tight Boost",
-            "drive": 0.8,
-            "tone": 5.0,
-            "level": 6.8,
-            "purpose": "기존 하이게인 톤의 어택과 선명도를 살짝 밀어주는 용도",
-        }
-    elif gain >= 4.0 and mid_focus >= 6.0:
-        drive = {
-            "type": "Klon / Transparent OD 계열",
-            "drive": 3.0,
-            "tone": 5.2,
-            "level": 5.8,
-            "purpose": "중음 캐릭터를 유지하면서 자연스럽게 밀어주는 용도",
-        }
-    elif gain < 4.0:
-        drive = {
-            "type": "Light Overdrive / Edge Boost",
-            "drive": 2.0,
-            "tone": 5.5,
-            "level": 5.5,
-            "purpose": "클린톤을 살짝 깨지게 만들어 반응성을 높이는 용도",
-        }
+    if gain < 3.2:
+        if brightness >= 7.0 and warmth < 5.5:
+            amp_family = "American Sparkle Clean"
+            amp_model = "Fender Twin Reverb / Deluxe Reverb 계열"
+            amp_examples = ["Fender Twin Reverb", "Fender Deluxe Reverb", "Tone King Imperial"]
+            amp_reason = "게인은 낮고 고역이 선명해 아메리칸 클린 특유의 반짝이는 톤과 잘 맞습니다."
+        elif brightness >= 6.0 and mid_focus >= 5.5:
+            amp_family = "Vox Chime Clean"
+            amp_model = "Vox AC30 / AC15 Clean 계열"
+            amp_examples = ["Vox AC30", "Vox AC15", "Matchless DC-30"]
+            amp_reason = "밝고 미드가 살아 있어 Vox 계열의 차임감 있는 클린톤과 잘 맞습니다."
+        elif warmth >= 6.5 and mid_focus >= 5.0:
+            amp_family = "Dumble / Boutique Smooth Clean"
+            amp_model = "Dumble Clean / Two-Rock / Boutique Clean 계열"
+            amp_examples = ["Dumble Clean", "Two-Rock Classic", "Morgan SW-style Clean"]
+            amp_reason = "따뜻한 저중역과 부드러운 미드가 있어 부티크 클린 계열과 잘 맞습니다."
+        elif compression >= 6.5 and brightness >= 5.5:
+            amp_family = "Hi-Fi Solid State Clean"
+            amp_model = "Jazz Chorus / Studio Clean 계열"
+            amp_examples = ["Roland JC-120", "Studio Clean", "Hi-Fi Clean"]
+            amp_reason = "압축감과 선명도가 있어 깨끗한 솔리드스테이트/스튜디오 클린 계열에 가깝습니다."
+        else:
+            amp_family = "Warm Vintage Clean"
+            amp_model = "Fender Bassman / Tweed Clean 계열"
+            amp_examples = ["Fender Bassman", "Tweed Deluxe", "Vintage American Clean"]
+            amp_reason = "게인은 낮고 따뜻한 성향이 있어 빈티지 클린 앰프와 잘 맞습니다."
+
+    elif gain < 5.2:
+        if brightness >= 6.7 and mid_focus >= 5.2:
+            amp_family = "Vox Edge of Breakup"
+            amp_model = "Vox AC30 Breakup / Matchless 계열"
+            amp_examples = ["Vox AC30 Breakup", "Matchless DC-30", "Bad Cat Black Cat"]
+            amp_reason = "밝고 미드가 살아 있는 엣지 오브 브레이크업 성향이라 Vox/Matchless 계열이 잘 맞습니다."
+        elif warmth >= 6.4 and mid_focus >= 5.5:
+            amp_family = "Tweed / Blues Breakup"
+            amp_model = "Tweed Deluxe / Bassman Breakup 계열"
+            amp_examples = ["Fender Tweed Deluxe", "Fender Bassman", "Victoria Tweed"]
+            amp_reason = "따뜻하고 살짝 깨지는 블루스 브레이크업 톤에 가깝습니다."
+        elif mid_focus >= 6.5:
+            amp_family = "Marshall Plexi Low Gain"
+            amp_model = "Marshall Plexi / Bluesbreaker 계열"
+            amp_examples = ["Marshall Plexi", "Marshall Bluesbreaker", "JTM45"]
+            amp_reason = "미드가 앞으로 나오며 게인이 과하지 않아 Plexi/JTM 계열 크런치와 잘 맞습니다."
+        else:
+            amp_family = "Boutique Edge Drive"
+            amp_model = "Dumble OD / Two-Rock Drive 계열"
+            amp_examples = ["Dumble OD", "Two-Rock Drive", "Fuchs ODS"]
+            amp_reason = "중간 게인과 부드러운 반응성 때문에 부티크 오버드라이브 앰프 계열과 잘 맞습니다."
+
+    elif gain < 7.0:
+        if mid_focus >= 7.0 and brightness < 6.8:
+            amp_family = "Marshall JCM800 Crunch"
+            amp_model = "JCM800 / JMP Master Volume 계열"
+            amp_examples = ["Marshall JCM800", "Marshall JMP", "Friedman Smallbox"]
+            amp_reason = "중음이 강하고 게인이 중상 정도라 JCM800 계열의 록 크런치와 잘 맞습니다."
+        elif brightness >= 7.0 and fizz < 5.5:
+            amp_family = "Bright British Rock"
+            amp_model = "Plexi Hot / AC-style Rock 계열"
+            amp_examples = ["Marshall Plexi Hot", "Vox Rock", "Matchless Driven"]
+            amp_reason = "밝고 선명한 록 드라이브 성향이라 브리티시 계열의 열린 톤과 잘 맞습니다."
+        elif warmth >= 6.5 and mid_focus >= 5.5:
+            amp_family = "Orange Thick Rock"
+            amp_model = "Orange Rockerverb / OR 계열"
+            amp_examples = ["Orange Rockerverb", "Orange OR100", "Matamp-style Rock"]
+            amp_reason = "두꺼운 저중역과 미드가 있어 Orange 계열의 굵은 록톤과 잘 맞습니다."
+        elif sustain >= 6.5 and compression >= 5.5:
+            amp_family = "Smooth Lead Amp"
+            amp_model = "Soldano / Dumble Lead 계열"
+            amp_examples = ["Soldano SLO Lead", "Dumble Lead", "Bogner Ecstasy Blue"]
+            amp_reason = "서스테인과 압축감이 있어 부드러운 리드 앰프 계열과 잘 맞습니다."
+        else:
+            amp_family = "Balanced Classic Rock Amp"
+            amp_model = "Marshall DSL / Friedman / Bogner 계열"
+            amp_examples = ["Marshall DSL", "Friedman Runt", "Bogner Shiva"]
+            amp_reason = "밸런스 좋은 중게인 록톤이라 범용 브리티시 록 앰프와 잘 맞습니다."
+
     else:
-        drive = {
-            "type": "Transparent Overdrive 계열",
-            "drive": 2.8,
-            "tone": 5.0,
-            "level": 5.8,
-            "purpose": "원톤을 크게 바꾸지 않고 자연스럽게 게인을 추가하는 용도",
-        }
+        if low_tightness >= 7.0 and mid_focus < 5.5 and fizz >= 5.5:
+            amp_family = "Mesa Rectifier Modern High-Gain"
+            amp_model = "Mesa Dual Rectifier / Modern Recto 계열"
+            amp_examples = ["Mesa Dual Rectifier", "Mesa Triple Rectifier", "Modern Recto"]
+            amp_reason = "저음이 타이트하고 중음이 살짝 파인 모던 하이게인 성향이라 Rectifier 계열과 잘 맞습니다."
+        elif low_tightness >= 7.0 and mid_focus >= 5.5:
+            amp_family = "5150 / EVH Tight High-Gain"
+            amp_model = "Peavey 5150 / EVH 5150III 계열"
+            amp_examples = ["Peavey 5150", "EVH 5150III", "Peavey 6505"]
+            amp_reason = "타이트한 저역과 강한 게인, 살아 있는 미드가 5150/EVH 계열과 잘 맞습니다."
+        elif mid_focus >= 6.8 and sustain >= 6.0:
+            amp_family = "Soldano Singing Lead"
+            amp_model = "Soldano SLO / Hot Lead 계열"
+            amp_examples = ["Soldano SLO-100", "Bogner Ecstasy Red", "Friedman BE Lead"]
+            amp_reason = "중음과 서스테인이 좋아 노래하듯 이어지는 Soldano 계열 리드톤에 가깝습니다."
+        elif warmth >= 6.8 and low_tightness < 6.0:
+            amp_family = "Thick Saturated British High-Gain"
+            amp_model = "Orange / Bogner / Friedman 계열"
+            amp_examples = ["Orange Rockerverb High Gain", "Bogner Uberschall", "Friedman BE"]
+            amp_reason = "저중역이 두껍고 포화감이 있어 굵은 브리티시 하이게인 계열과 잘 맞습니다."
+        elif fizz >= 7.0:
+            amp_family = "Aggressive Modern High-Gain"
+            amp_model = "5150 / Recto / ENGL 계열"
+            amp_examples = ["EVH 5150III", "ENGL Powerball", "Mesa Rectifier"]
+            amp_reason = "고역 fizz와 공격적인 질감이 있어 모던 메탈 하이게인 계열과 잘 맞습니다."
+        else:
+            amp_family = "Hot-Rodded British High-Gain"
+            amp_model = "Friedman BE / Marshall Hot Rod / SLO 계열"
+            amp_examples = ["Friedman BE-100", "Marshall JCM800 Hot Rod", "Soldano SLO"]
+            amp_reason = "높은 게인과 미드 중심 성향이 핫로드 브리티시 하이게인 계열과 잘 맞습니다."
+
+        # -----------------------------
+    # 3. 드라이브/부스터 추천 - 세분화 v2
+    # -----------------------------
+    if gain >= 7.0:
+        if low_tightness < 5.8:
+            drive = {
+                "type": "Tube Screamer Tight Boost",
+                "model_examples": ["Ibanez TS808", "Maxon OD808", "Horizon Devices Precision Drive"],
+                "drive": 1.0,
+                "tone": 4.6 if brightness >= 6.5 else 5.3,
+                "level": 8.0,
+                "purpose": "하이게인 앰프 앞에서 저음을 조이고 미드를 밀어 리프를 타이트하게 만드는 용도",
+            }
+        elif fizz >= 7.0:
+            drive = {
+                "type": "Clean Boost / Dark Tight Boost",
+                "model_examples": ["Fortin Grind 낮은 톤", "TC Spark Boost", "Klon 낮은 게인"],
+                "drive": 0.5,
+                "tone": 4.0,
+                "level": 6.8,
+                "purpose": "이미 고역 fizz가 많으므로 밝은 부스터보다 어두운 클린 부스트가 적합합니다.",
+            }
+        elif mid_focus >= 6.5:
+            drive = {
+                "type": "SD-1 / Mid Push Boost",
+                "model_examples": ["Boss SD-1", "MXR GT-OD", "TS Mini"],
+                "drive": 1.2,
+                "tone": 5.0,
+                "level": 7.2,
+                "purpose": "중음을 더 앞으로 밀어 솔로와 록 리프의 존재감을 높이는 용도",
+            }
+        else:
+            drive = {
+                "type": "Precision Tight Boost",
+                "model_examples": ["Horizon Precision Drive", "Fortin 33", "Pepers Dirty Tree"],
+                "drive": 0.8,
+                "tone": 5.2,
+                "level": 7.5,
+                "purpose": "하이게인 톤의 저역을 정리하고 피킹 어택을 선명하게 만드는 용도",
+            }
+
+    elif gain >= 5.0:
+        if mid_focus >= 7.0:
+            drive = {
+                "type": "Klon / Transparent Mid Boost",
+                "model_examples": ["Klon Centaur", "Wampler Tumnus", "J. Rockett Archer"],
+                "drive": 2.8,
+                "tone": 5.2,
+                "level": 6.0,
+                "purpose": "미드 캐릭터를 유지하면서 자연스럽게 게인과 존재감을 추가하는 용도",
+            }
+        elif brightness >= 7.0:
+            drive = {
+                "type": "Bluesbreaker Style OD",
+                "model_examples": ["Marshall Bluesbreaker", "JHS Morning Glory", "Analogman King of Tone"],
+                "drive": 3.0,
+                "tone": 4.7,
+                "level": 5.8,
+                "purpose": "밝은 앰프에 과한 고역을 더하지 않고 부드러운 크런치를 더하는 용도",
+            }
+        elif warmth >= 6.5:
+            drive = {
+                "type": "Rat Style Distortion",
+                "model_examples": ["ProCo RAT", "JHS PackRat", "Walrus Iron Horse"],
+                "drive": 3.5,
+                "tone": 4.2,
+                "level": 5.5,
+                "purpose": "두꺼운 저중역에 거친 질감을 더해 굵은 록톤을 만드는 용도",
+            }
+        elif pick_attack >= 6.5:
+            drive = {
+                "type": "Hard Clipping Distortion",
+                "model_examples": ["Boss DS-1", "MXR Distortion+", "Suhr Riot 낮은 게인"],
+                "drive": 3.2,
+                "tone": 5.0,
+                "level": 5.6,
+                "purpose": "강한 어택을 살리고 직선적인 록 디스토션을 만드는 용도",
+            }
+        else:
+            drive = {
+                "type": "Transparent Overdrive",
+                "model_examples": ["Timmy", "Paul Cochrane Timmy", "Nobels ODR-1"],
+                "drive": 3.0,
+                "tone": 5.0,
+                "level": 5.8,
+                "purpose": "원톤을 크게 바꾸지 않고 자연스럽게 드라이브를 추가하는 용도",
+            }
+
+    elif gain >= 3.2:
+        if brightness >= 6.5 and mid_focus >= 5.5:
+            drive = {
+                "type": "Treble Booster / Chime Boost",
+                "model_examples": ["Dallas Rangemaster", "Brian May Treble Booster", "Vox-style Boost"],
+                "drive": 2.0,
+                "tone": 6.0,
+                "level": 6.2,
+                "purpose": "밝고 차임감 있는 앰프를 더 앞으로 밀어주는 용도",
+            }
+        elif warmth >= 6.5:
+            drive = {
+                "type": "Blues Overdrive",
+                "model_examples": ["Boss BD-2", "Nobels ODR-1", "Keeley Super Phat Mod"],
+                "drive": 3.2,
+                "tone": 4.8,
+                "level": 5.6,
+                "purpose": "따뜻한 클린/브레이크업 톤에 블루지한 질감을 더하는 용도",
+            }
+        elif compression >= 6.0:
+            drive = {
+                "type": "Low Gain Compressor Boost",
+                "model_examples": ["Compressor + Clean Boost", "Keeley Compressor", "Xotic RC Booster"],
+                "drive": 1.2,
+                "tone": 5.2,
+                "level": 6.0,
+                "purpose": "게인은 낮게 유지하면서 음의 밀도와 sustain을 보강하는 용도",
+            }
+        else:
+            drive = {
+                "type": "Light Transparent OD",
+                "model_examples": ["Timmy", "Morning Glory 낮은 게인", "RC Booster"],
+                "drive": 2.0,
+                "tone": 5.2,
+                "level": 5.5,
+                "purpose": "클린톤을 살짝 밀어 엣지 오브 브레이크업을 만드는 용도",
+            }
+
+    else:
+        if warmth >= 6.5:
+            drive = {
+                "type": "Clean Boost",
+                "model_examples": ["Xotic RC Booster", "MXR Micro Amp", "TC Spark Boost"],
+                "drive": 0.3,
+                "tone": 5.0,
+                "level": 5.8,
+                "purpose": "톤 색깔은 유지하면서 볼륨과 반응성만 살짝 올리는 용도",
+            }
+        elif brightness >= 7.0:
+            drive = {
+                "type": "Warm Boost",
+                "model_examples": ["EP Booster", "Klon 낮은 게인", "Analog Boost"],
+                "drive": 0.5,
+                "tone": 4.4,
+                "level": 5.8,
+                "purpose": "밝은 클린톤에 약간의 두께와 따뜻함을 더하는 용도",
+            }
+        else:
+            drive = {
+                "type": "No Drive / Compressor First",
+                "model_examples": ["Compressor", "Studio Comp", "Clean Preamp"],
+                "drive": 0.0,
+                "tone": 5.0,
+                "level": 5.0,
+                "purpose": "드라이브보다 컴프레서나 프리앰프로 기본 톤을 정리하는 편이 좋습니다.",
+            }
 
     # -----------------------------
     # 4. 앰프 노브 추천값
