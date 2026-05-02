@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 type Scores = {
   gain: number;
@@ -111,6 +111,17 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  useEffect(() => {
+    const API_BASE_URL = 'https://guitar-tone-finder-api.onrender.com';
+
+    fetch(`${API_BASE_URL}/health`)
+      .then(() => {
+        console.log('Backend is awake');
+      })
+      .catch((error) => {
+        console.log('Backend wake-up failed:', error);
+      });
+  }, []);
   const previewUrl = useMemo(() => (file ? URL.createObjectURL(file) : ''), [file]);
 
   async function analyze() {
@@ -204,7 +215,7 @@ export default function Home() {
               <span className="text-5xl">🎸</span>
               <strong className="mt-4 text-lg">오디오 파일 선택</strong>
               <span className="mt-2 text-sm text-slate-400">
-                권장: 기타가 잘 들리는 15~60초 클립 / 25MB 이하
+                권장: 기타가 잘 들리는 15~60초 클립 / 1MB 이하
               </span>
             </label>
 
@@ -229,7 +240,9 @@ export default function Home() {
             >
               {loading ? '분석 중...' : '톤 분석 시작'}
             </button>
-
+            <p className="mt-3 text-xs leading-5 text-slate-400">
+              무료 서버 특성상 첫 분석은 서버가 깨어나는 데 시간이 걸릴 수 있습니다.
+            </p>
             {error && (
               <p className="mt-4 rounded-xl bg-rose-500/15 p-4 text-sm text-rose-100">
                 {error}
