@@ -64,6 +64,15 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
     fizz = _get_score(scores, "fizz")
     presence = _get_score(scores, "presence", brightness)
 
+    body = _get_score(scores, "body", warmth)
+    mud = _get_score(scores, "mud", 0.0)
+    core_mid = _get_score(scores, "core_mid", mid_focus)
+    upper_mid = _get_score(scores, "upper_mid", mid_focus)
+    air = _get_score(scores, "air", 0.0)
+    clarity = _get_score(scores, "clarity", brightness)
+    scoop = _get_score(scores, "scoop", 0.0)
+    bite = _get_score(scores, "bite", pick_attack)
+
     reverb_tail = _get_score(space, "reverb_tail", ambience)
     dry_sustain = _get_score(space, "dry_sustain", sustain)
     room_wetness = _get_score(space, "room_wetness", ambience)
@@ -455,7 +464,30 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
     if not eq_tips:
         eq_tips.append("EQ 밸런스가 크게 치우치지 않았습니다. 앰프 기본 세팅에서 미세 조정하는 방향이 좋습니다.")
 
-        # -----------------------------
+    if mud >= 7.0:
+        eq_tips.append("Mud 대역이 강합니다. 180~350Hz를 살짝 줄이면 뭉침이 줄어듭니다.")
+    elif mud <= 3.0 and body <= 4.0:
+        eq_tips.append("저중역 바디가 부족합니다. 350~700Hz를 조금 올리면 톤이 덜 얇게 느껴집니다.")
+
+    if body >= 7.0 and mud < 5.5:
+        eq_tips.append("Body가 좋은 편입니다. 350~800Hz는 과하게 깎지 않는 것이 좋습니다.")
+
+    if clarity <= 4.0:
+        eq_tips.append("선명도가 낮은 편입니다. 2~4kHz를 소폭 올리거나 200~350Hz를 정리해 보세요.")
+
+    if fizz >= 7.0:
+        eq_tips.append("Fizz가 강합니다. 6.5~10kHz 대역을 하이컷 또는 좁은 컷으로 정리해 보세요.")
+
+    if air <= 2.5 and brightness <= 4.5:
+        eq_tips.append("공기감이 적은 편입니다. 하이컷을 너무 낮게 두지 말고 10kHz 이상을 살짝 열어보세요.")
+
+    if scoop >= 7.0:
+        eq_tips.append("미드가 빠진 성향입니다. 기타가 묻히면 800Hz~1.6kHz를 조금 올려보세요.")
+
+    if upper_mid >= 7.5 and bite >= 7.0:
+        eq_tips.append("상중역 어택이 강합니다. 귀에 쏘면 2~3.5kHz를 살짝 줄여보세요.")
+       
+    # -----------------------------
     # 7. 공간계 추천
     # -----------------------------
     # 이제 ambience 하나가 아니라 reverb_tail / room_wetness / delay_echo / dry_sustain을 분리해서 판단한다.
@@ -555,9 +587,39 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
 
     confidence = int(_clamp(confidence, 45, 88))
 
+    tone_traits = []
+
+    if body >= 7.0 and mud < 5.5:
+        tone_traits.append("몸통감이 풍부하지만 과하게 뭉치지는 않습니다.")
+    elif body >= 7.0 and mud >= 6.0:
+        tone_traits.append("저중역이 두꺼워 따뜻하지만 약간 뭉칠 수 있습니다.")
+    elif body <= 3.5:
+        tone_traits.append("저중역 바디가 적어 얇게 느껴질 수 있습니다.")
+
+    if clarity >= 7.0:
+        tone_traits.append("선명도가 좋아 믹스에서 잘 앞으로 나올 가능성이 큽니다.")
+    elif clarity <= 3.5 and mud >= 5.5:
+        tone_traits.append("선명도가 낮고 저중역이 많아 답답하게 들릴 수 있습니다.")
+
+    if fizz >= 7.0 and brightness < 6.0:
+        tone_traits.append("밝다기보다는 고역 fizz가 두드러지는 거친 톤입니다.")
+    elif brightness >= 7.0 and fizz < 5.5:
+        tone_traits.append("거친 fizz보다는 선명한 밝기가 있는 톤입니다.")
+
+    if scoop >= 7.0:
+        tone_traits.append("미드가 빠진 scooped 성향이 강합니다.")
+    elif core_mid >= 7.0:
+        tone_traits.append("중심 미드가 강해서 기타가 앞으로 나오는 성향입니다.")
+
+    if bite >= 7.0:
+        tone_traits.append("피킹 어택이 강하고 물리는 느낌이 뚜렷합니다.")
+    elif bite <= 3.5:
+        tone_traits.append("피킹 어택이 부드럽거나 둥글게 느껴질 수 있습니다.")
+
     return {
         "tone_type": tone_type,
         "tone_summary": tone_summary,
+        "tone_traits": tone_traits,
         "confidence": confidence,
         "amp_family": amp_family,
         "amp_examples": amp_examples,

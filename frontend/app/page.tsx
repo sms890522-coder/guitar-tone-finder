@@ -38,6 +38,7 @@ type EqProfile = {
 type Recommendation = {
   tone_type: string;
   tone_summary: string;
+  tone_traits?: string[];
   confidence: number;
   amp_family: string;
   amp_model?: string;
@@ -354,6 +355,19 @@ function ResultPanel({ result }: { result: Result }) {
         <p className="mt-3 leading-7 text-slate-700">
           {recommendation.tone_summary || '톤 요약 데이터가 없습니다.'}
         </p>
+
+        {recommendation.tone_traits && recommendation.tone_traits.length > 0 && (
+          <div className="mt-4 space-y-2">
+            {recommendation.tone_traits.map((trait) => (
+              <p
+                key={trait}
+                className="rounded-xl bg-slate-100 px-4 py-3 text-sm leading-6 text-slate-700"
+              >
+                {trait}
+              </p>
+            ))}
+          </div>
+        )}
 
         <div className="mt-5 rounded-2xl bg-slate-100 p-4">
           <p className="text-xs font-bold uppercase text-slate-500">Recommended Amp</p>
