@@ -268,6 +268,24 @@ def analyze_audio(path: str) -> dict[str, Any]:
     )
     roughness = _clamp(roughness)
 
+    
+    # Low Tightness:
+    # mud가 많으면 감점, bite/upper_mid가 있으면 가점, bass가 과하면 감점
+    bass_weight = _score(bass_energy + sub_bass_energy, 0.05, 0.25)
+    low_tightness = (
+        0.35 * bite
+        + 0.30 * clarity
+        + 0.25 * _score(upper_mid_energy / (bass_energy + mud_energy + 1e-9), 0.4, 3.0)
+        + 0.10 * _score(core_mid_energy / (mud_energy + 1e-9), 0.5, 3.0)
+        - 0.35 * mud
+        - 0.15 * bass_weight
+    )
+    low_tightness = _clamp(low_tightness)
+
+    # Sustain
+    sustain_raw = rms_mean / (rms_std + 1e-9)
+    sustain = _score(sustain_raw, 1.2, 8.0)
+
     # -----------------------------
     # High Gain Likelihood
     # -----------------------------
@@ -321,23 +339,6 @@ def analyze_audio(path: str) -> dict[str, Any]:
         high_gain_likelihood = min(high_gain_likelihood, 4.0)
 
     high_gain_likelihood = _clamp(high_gain_likelihood)
-
-    # Low Tightness:
-    # mud가 많으면 감점, bite/upper_mid가 있으면 가점, bass가 과하면 감점
-    bass_weight = _score(bass_energy + sub_bass_energy, 0.05, 0.25)
-    low_tightness = (
-        0.35 * bite
-        + 0.30 * clarity
-        + 0.25 * _score(upper_mid_energy / (bass_energy + mud_energy + 1e-9), 0.4, 3.0)
-        + 0.10 * _score(core_mid_energy / (mud_energy + 1e-9), 0.5, 3.0)
-        - 0.35 * mud
-        - 0.15 * bass_weight
-    )
-    low_tightness = _clamp(low_tightness)
-
-    # Sustain
-    sustain_raw = rms_mean / (rms_std + 1e-9)
-    sustain = _score(sustain_raw, 1.2, 8.0)
 
     pick_attack = bite
 
