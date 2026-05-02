@@ -32,15 +32,16 @@ type Recommendation = {
   tone_summary: string;
   confidence: number;
   amp_family: string;
+  amp_model?: string;
   amp_examples: string[];
   amp_reason: string;
   drive: {
-  type: string;
-  model_examples?: string[];
-  drive: number;
-  tone: number;
-  level: number;
-  purpose: string;
+    type: string;
+    model_examples?: string[];
+    drive: number;
+    tone: number;
+    level: number;
+    purpose: string;
   };
   amp_settings: Record<string, number>;
   cabinet: {
@@ -336,11 +337,16 @@ function ResultPanel({ result }: { result: Result }) {
 
         <div className="mt-5 rounded-2xl bg-slate-100 p-4">
           <p className="text-xs font-bold uppercase text-slate-500">Recommended Amp</p>
-          <p className="mt-1 text-lg font-black">
-            {recommendation.amp_family || '추천 앰프 데이터 없음'}
-          </p>
+          <p className="mt-1 text-lg font-black">{recommendation.amp_family}</p>
+
+          {recommendation.amp_model && (
+            <p className="mt-1 text-sm font-bold text-indigo-700">
+              {recommendation.amp_model}
+            </p>
+          )}
+
           <p className="mt-2 text-sm leading-6 text-slate-600">
-            {recommendation.amp_reason || '추천 이유 데이터가 없습니다.'}
+            {recommendation.amp_reason}
           </p>
 
           {ampExamples.length > 0 && (
@@ -415,11 +421,31 @@ function ResultPanel({ result }: { result: Result }) {
             <p className="text-xs uppercase text-slate-400">Drive Model Examples</p>
             <div className="mt-3 flex flex-wrap gap-2">
               {recommendation.drive.model_examples.map((model) => (
-                <span key={model} className="rounded-full bg-white/10 px-3 py-1 text-xs text-slate-200">
+                <span
+                  key={model}
+                  className="rounded-full bg-white/10 px-3 py-1 text-xs text-slate-200"
+                >
                   {model}
                 </span>
               ))}
             </div>
+            <div className="rounded-2xl bg-white/5 p-4 sm:col-span-2">
+              <p className="text-xs uppercase text-slate-400">Drive Settings</p>
+              <div className="mt-3 grid grid-cols-3 gap-3">
+                <div className="rounded-xl bg-white/5 p-3">
+                  <p className="text-xs text-slate-400">Drive</p>
+                  <p className="text-xl font-black">{recommendation.drive.drive}</p>
+                </div>
+                <div className="rounded-xl bg-white/5 p-3">
+                  <p className="text-xs text-slate-400">Tone</p>
+                  <p className="text-xl font-black">{recommendation.drive.tone}</p>
+                </div>
+                <div className="rounded-xl bg-white/5 p-3">
+                  <p className="text-xs text-slate-400">Level</p>
+                  <p className="text-xl font-black">{recommendation.drive.level}</p>
+                </div>
+              </div>
+            </div>                
           </div>
         )}
         <InfoCard title="Cabinet" main={cabinet.cab} body={cabinet.tip} />
