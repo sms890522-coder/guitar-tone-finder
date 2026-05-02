@@ -47,6 +47,7 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
 
     scores = analysis.get("scores", {})
     eq = analysis.get("eq_profile", {})
+    space = analysis.get("space", {})
 
     gain = _get_score(scores, "gain")
     brightness = _get_score(scores, "brightness")
@@ -62,6 +63,11 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
     sustain = _get_score(scores, "sustain")
     fizz = _get_score(scores, "fizz")
     presence = _get_score(scores, "presence", brightness)
+
+    reverb_tail = _get_score(space, "reverb_tail", ambience)
+    dry_sustain = _get_score(space, "dry_sustain", sustain)
+    room_wetness = _get_score(space, "room_wetness", ambience)
+    delay_echo = _get_score(space, "delay_echo", 0.0)
 
     # -----------------------------
     # 1. 톤 타입 분류
@@ -247,52 +253,75 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
     if not eq_tips:
         eq_tips.append("EQ 밸런스가 크게 치우치지 않았습니다. 앰프 기본 세팅에서 미세 조정하는 방향이 좋습니다.")
 
-    # -----------------------------
+        # -----------------------------
     # 7. 공간계 추천
     # -----------------------------
-    # ambience는 공간감/잔향 가능성 점수.
-    # sustain 조건에 너무 의존하면 강한 리버브도 Room으로만 나오는 문제가 있어서
-    # ambience 중심으로 더 세분화한다.
-    if ambience >= 8.2:
-        ambience_recommendation = {
-            "reverb": "Large Hall / Ambient Reverb",
-            "reverb_mix": 28,
-            "delay": "Stereo Delay 또는 Dotted 8th Delay",
-            "delay_mix": 14,
-            "tip": "잔향이 매우 큰 톤 성향입니다. Hall, Ambient, Shimmer 계열처럼 긴 tail을 가진 리버브가 잘 맞습니다.",
-        }
-    elif ambience >= 6.8:
-        ambience_recommendation = {
-            "reverb": "Plate Reverb / Medium Hall",
-            "reverb_mix": 20,
-            "delay": "Quarter Delay 또는 Analog Delay",
-            "delay_mix": 10,
-            "tip": "공간감이 꽤 있는 톤입니다. Plate나 Medium Hall로 넓이를 만들고, 딜레이는 과하지 않게 섞는 편이 좋습니다.",
-        }
-    elif ambience >= 4.8:
-        ambience_recommendation = {
-            "reverb": "Room Reverb / Small Plate",
-            "reverb_mix": 10,
-            "delay": "Slapback 또는 짧은 Delay",
-            "delay_mix": 5,
-            "tip": "약간의 공간감이 있는 톤입니다. 짧은 Room이나 Small Plate 정도가 잘 맞습니다.",
-        }
-    elif ambience >= 2.5:
-        ambience_recommendation = {
-            "reverb": "Small Room",
-            "reverb_mix": 5,
-            "delay": "Off 또는 매우 약하게",
-            "delay_mix": 0,
-            "tip": "대체로 드라이한 톤입니다. 공간계는 Small Room 정도로 살짝만 더하는 편이 좋습니다.",
-        }
+    # 이제 ambience 하나가 아니라 reverb_tail / room_wetness / delay_echo / dry_sustain을 분리해서 판단한다.
+
+    if reverb_tail >= 8.0:
+        reverb_name = "Large Hall / Ambient Reverb"
+        reverb_mix = 28
+        reverb_tip = "긴 잔향 tail이 강하게 감지됩니다. Hall, Ambient, Shimmer 계열처럼 길게 퍼지는 리버브가 잘 맞습니다."
+    elif reverb_tail >= 6.4:
+        reverb_name = "Plate Reverb / Medium Hall"
+        reverb_mix = 20
+        reverb_tip = "분명한 리버브 tail이 있습니다. Plate 또는 Medium Hall로 넓이를 만들기 좋습니다."
+    elif reverb_tail >= 4.6:
+        reverb_name = "Room Reverb / Small Plate"
+        reverb_mix = 11
+        reverb_tip = "약한 잔향이 감지됩니다. 짧은 Room 또는 Small Plate 정도가 잘 맞습니다."
+    elif room_wetness >= 4.5:
+        reverb_name = "Small Room"
+        reverb_mix = 6
+        reverb_tip = "큰 리버브 tail보다는 작은 방 울림 또는 room감에 가깝습니다."
     else:
-        ambience_recommendation = {
-            "reverb": "Dry / Reverb Off",
-            "reverb_mix": 0,
-            "delay": "Off",
-            "delay_mix": 0,
-            "tip": "거의 드라이한 톤입니다. 원음의 어택과 선명도를 살리려면 리버브를 끄거나 최소화하세요.",
-        }
+        reverb_name = "Dry / Reverb Off"
+        reverb_mix = 0
+        reverb_tip = "공간계가 거의 없는 드라이 톤에 가깝습니다. 리버브는 끄거나 최소화하는 편이 좋습니다."
+
+    if delay_echo >= 7.0:
+        delay_name = "Dotted 8th / Stereo Delay"
+        delay_mix = 16
+        delay_tip = "반복성 있는 에너지 패턴이 강합니다. 딜레이가 톤의 중요한 요소일 가능성이 있습니다."
+    elif delay_echo >= 4.8:
+        delay_name = "Quarter Delay / Analog Delay"
+        delay_mix = 10
+        delay_tip = "약한 딜레이 또는 반복감이 감지됩니다."
+    elif reverb_tail >= 6.5:
+        delay_name = "Subtle Quarter Delay"
+        delay_mix = 6
+        delay_tip = "리버브가 큰 톤이므로 딜레이는 보조적으로만 섞는 편이 좋습니다."
+    else:
+        delay_name = "Off 또는 매우 약하게"
+        delay_mix = 0
+        delay_tip = "딜레이 성향은 강하게 감지되지 않습니다."
+
+    if dry_sustain >= 7.0 and reverb_tail <= 4.5:
+        space_character = "Dry Sustain"
+        space_note = "공간계가 큰 톤이라기보다 기타 자체의 서스테인이 긴 드라이 톤에 가깝습니다."
+    elif reverb_tail >= 6.5:
+        space_character = "Reverb Tail"
+        space_note = "어택 이후 잔향 tail이 비교적 길게 남는 톤입니다."
+    elif room_wetness >= 5.0:
+        space_character = "Room Wetness"
+        space_note = "큰 리버브보다는 작은 room감 또는 녹음 공간의 울림이 감지됩니다."
+    else:
+        space_character = "Dry"
+        space_note = "공간감이 적고 직접적인 톤입니다."
+
+    ambience_recommendation = {
+        "character": space_character,
+        "reverb": reverb_name,
+        "reverb_mix": reverb_mix,
+        "delay": delay_name,
+        "delay_mix": delay_mix,
+        "tip": f"{reverb_tip} {delay_tip}",
+        "space_note": space_note,
+        "reverb_tail": reverb_tail,
+        "dry_sustain": dry_sustain,
+        "room_wetness": room_wetness,
+        "delay_echo": delay_echo,
+    }
 
     # -----------------------------
     # 8. 최종 체인
