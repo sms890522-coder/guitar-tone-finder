@@ -66,6 +66,16 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
 
     high_gain_likelihood = _get_score(scores, "high_gain_likelihood", gain)
 
+
+    body = _get_score(scores, "body", warmth)
+    mud = _get_score(scores, "mud", 0.0)
+    core_mid = _get_score(scores, "core_mid", mid_focus)
+    upper_mid = _get_score(scores, "upper_mid", mid_focus)
+    air = _get_score(scores, "air", 0.0)
+    clarity = _get_score(scores, "clarity", brightness)
+    scoop = _get_score(scores, "scoop", 0.0)
+    bite = _get_score(scores, "bite", pick_attack)
+
         # 실제 분류용 드라이브 강도
     # gain보다 high_gain_likelihood를 우선한다.
     drive_intensity = _clamp(
@@ -112,14 +122,6 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
         and clarity < 7.5
     )
 
-    body = _get_score(scores, "body", warmth)
-    mud = _get_score(scores, "mud", 0.0)
-    core_mid = _get_score(scores, "core_mid", mid_focus)
-    upper_mid = _get_score(scores, "upper_mid", mid_focus)
-    air = _get_score(scores, "air", 0.0)
-    clarity = _get_score(scores, "clarity", brightness)
-    scoop = _get_score(scores, "scoop", 0.0)
-    bite = _get_score(scores, "bite", pick_attack)
 
     reverb_tail = _get_score(space, "reverb_tail", ambience)
     dry_sustain = _get_score(space, "dry_sustain", sustain)
@@ -479,28 +481,28 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
         "master": 5.0,
     }
 
-    # -----------------------------
+        # -----------------------------
     # 5. 캐비넷/마이크/IR 추천
     # -----------------------------
-    if gain >= 6.5 and brightness >= 6.0:
+    if drive_intensity >= 6.8 and brightness >= 6.0:
         cabinet = {
             "cab": "4x12 V30 계열",
             "mic": "SM57 + Ribbon R121 블렌드",
             "tip": "하이게인 선명도는 유지하되, 리본 마이크를 섞어 고역 fizz를 부드럽게 줄이는 방향이 좋습니다.",
         }
-    elif gain >= 6.5 and warmth >= 6.0:
+    elif drive_intensity >= 6.8 and warmth >= 6.0:
         cabinet = {
             "cab": "4x12 Greenback 또는 V30/Greenback Mix",
             "mic": "SM57 off-axis",
             "tip": "중저역이 많으므로 마이크를 살짝 off-axis로 두고 하이패스 필터를 추천합니다.",
         }
-    elif gain < 4.5 and brightness >= 6.0:
+    elif drive_intensity < 3.8 and brightness >= 6.0:
         cabinet = {
             "cab": "2x12 Open Back",
             "mic": "Condenser + SM57 소량 블렌드",
             "tip": "밝고 열린 클린톤을 살리기 위해 오픈백 캐비넷과 컨덴서 계열 마이크가 잘 맞습니다.",
         }
-    elif gain < 4.5:
+    elif drive_intensity < 3.8:
         cabinet = {
             "cab": "1x12 또는 2x12 Vintage Open Back",
             "mic": "Ribbon 또는 Dynamic off-axis",
@@ -700,6 +702,7 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
         "tone_traits": tone_traits,
         "confidence": confidence,
         "amp_family": amp_family,
+        "amp_model": amp_model,
         "amp_examples": amp_examples,
         "amp_reason": amp_reason,
         "drive": drive,
