@@ -16,6 +16,14 @@ type Scores = {
   sustain: number;
   fizz: number;
   presence: number;
+  body: number;
+  mud: number;
+  core_mid: number;
+  upper_mid: number;
+  air: number;
+  clarity: number;
+  scoop: number;
+  bite: number;
 };
 
 type EqProfile = {
@@ -103,6 +111,14 @@ const scoreLabels: Array<[keyof Scores, string, string]> = [
   ['sustain', 'Sustain', '서스테인'],
   ['fizz', 'Fizz', '고역 지글거림'],
   ['presence', 'Presence', '존재감/상중역'],
+  ['body', 'Body', '기타 몸통감'],
+  ['mud', 'Mud', '저중역 뭉침'],
+  ['core_mid', 'Core Mid', '중심 미드'],
+  ['upper_mid', 'Upper Mid', '상중역 어택'],
+  ['air', 'Air', '공기감'],
+  ['clarity', 'Clarity', '선명도'],
+  ['scoop', 'Scoop', '미드가 빠진 정도'],
+  ['bite', 'Bite', '물리는 어택감'],
 ];
 
 const MAX_FILE_SIZE = 25 * 1024 * 1024;

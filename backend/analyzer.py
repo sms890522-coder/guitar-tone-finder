@@ -7,15 +7,18 @@ from typing import Any
 import librosa
 import numpy as np
 
+
 def _clamp(value: float, low: float = 0.0, high: float = 10.0) -> float:
     if math.isnan(value) or math.isinf(value):
         return 0.0
     return max(low, min(high, value))
 
+
 def _score(value: float, min_value: float, max_value: float) -> float:
     if max_value <= min_value:
         return 0.0
     return _clamp(((value - min_value) / (max_value - min_value)) * 10.0)
+
 
 def _band_energy_ratio(S: np.ndarray, freqs: np.ndarray, low: float, high: float) -> float:
     idx = np.where((freqs >= low) & (freqs < high))[0]
@@ -25,6 +28,19 @@ def _band_energy_ratio(S: np.ndarray, freqs: np.ndarray, low: float, high: float
     band_energy = float(np.sum(S[idx, :]))
     total_energy = float(np.sum(S) + 1e-9)
     return band_energy / total_energy
+
+
+def _safe_mean(values: np.ndarray) -> float:
+    if values.size == 0:
+        return 0.0
+    return float(np.mean(values))
+
+
+def _safe_median(values: list[float] | np.ndarray) -> float:
+    if len(values) == 0:
+        return 0.0
+    return float(np.median(values))
+
 
 @dataclass
 class ToneScores:
@@ -36,13 +52,22 @@ class ToneScores:
     compression: float
     roughness: float
     ambience: float
-
-    # 새로 추가되는 정교 분석 점수
     distortion: float
     pick_attack: float
     sustain: float
     fizz: float
     presence: float
+
+    # v6 detail scores
+    body: float
+    mud: float
+    core_mid: float
+    upper_mid: float
+    air: float
+    clarity: float
+    scoop: float
+    bite: float
+
 
 @dataclass
 class AudioStats:
@@ -57,20 +82,25 @@ class AudioStats:
     zero_crossing_rate: float
     spectral_flatness: float
 
-    low_energy: float
-    low_mid_energy: float
-    mid_energy: float
-    high_mid_energy: float
+    sub_bass_energy: float
+    bass_energy: float
+    mud_energy: float
+    warm_body_energy: float
+    core_mid_energy: float
+    upper_mid_energy: float
     presence_energy: float
-    air_fizz_energy: float
+    fizz_energy: float
+    air_energy: float
+
 
 def analyze_audio(path: str) -> dict[str, Any]:
     """
-    기타톤 성향 분석기.
+    Guitar tone analyzer v6.
 
-    주의:
-    - 실제 장비를 정확히 맞히는 모델이 아니라 오디오 특징 기반 추정값.
-    - 무료 서버 안정성을 위해 최대 90초까지만 분석.
+    목표:
+    - 전체 평균만 보는 단순 분석에서 벗어나 주파수 대역을 세분화한다.
+    - Warmth와 Mud, Brightness와 Fizz, Sustain과 Reverb를 구분한다.
+    - 실제 장비 판별이 아니라 비슷한 톤 세팅을 위한 특징 추정값이다.
     """
 
     y, sr = librosa.load(path, sr=44100, mono=True, duration=90)
@@ -84,9 +114,6 @@ def analyze_audio(path: str) -> dict[str, Any]:
     if len(y) < sr * 3:
         raise ValueError("오디오가 너무 짧거나 무음에 가깝습니다. 최소 3초 이상의 기타 소리를 업로드해 주세요.")
 
-    # 너무 큰 음량 차이를 줄이고 분석 안정화
-    y = librosa.util.normalize(y)
-
     duration = float(librosa.get_duration(y=y, sr=sr))
 
     # 기본 특징
@@ -97,98 +124,178 @@ def analyze_audio(path: str) -> dict[str, Any]:
     zcr = librosa.feature.zero_crossing_rate(y)[0]
     flatness = librosa.feature.spectral_flatness(y=y)[0]
 
-    # 피킹 어택 추정
     onset_env = librosa.onset.onset_strength(y=y, sr=sr)
-    attack_raw = float(np.mean(onset_env) + np.percentile(onset_env, 90))
 
-    # STFT 기반 EQ 대역 분석
+    # STFT 기반 대역 분석
     n_fft = 4096
     hop_length = 1024
     S_complex = librosa.stft(y, n_fft=n_fft, hop_length=hop_length)
     S = np.abs(S_complex) ** 2
     freqs = librosa.fft_frequencies(sr=sr, n_fft=n_fft)
 
-    low_energy = _band_energy_ratio(S, freqs, 80, 250)
-    low_mid_energy = _band_energy_ratio(S, freqs, 250, 700)
-    mid_energy = _band_energy_ratio(S, freqs, 700, 1600)
-    high_mid_energy = _band_energy_ratio(S, freqs, 1600, 4000)
-    presence_energy = _band_energy_ratio(S, freqs, 4000, 7000)
-    air_fizz_energy = _band_energy_ratio(S, freqs, 7000, 11000)
+    # v6 세분화 대역
+    sub_bass_energy = _band_energy_ratio(S, freqs, 40, 80)
+    bass_energy = _band_energy_ratio(S, freqs, 80, 160)
+    mud_energy = _band_energy_ratio(S, freqs, 160, 350)
+    warm_body_energy = _band_energy_ratio(S, freqs, 350, 800)
+    core_mid_energy = _band_energy_ratio(S, freqs, 800, 1600)
+    upper_mid_energy = _band_energy_ratio(S, freqs, 1600, 3500)
+    presence_energy = _band_energy_ratio(S, freqs, 3500, 6500)
+    fizz_energy = _band_energy_ratio(S, freqs, 6500, 10000)
+    air_energy = _band_energy_ratio(S, freqs, 10000, 14000)
+
+    # 기존 UI/추천 로직과의 호환용 eq_profile 대역
+    low_energy = sub_bass_energy + bass_energy
+    low_mid_energy = mud_energy + warm_body_energy
+    mid_energy = core_mid_energy
+    high_mid_energy = upper_mid_energy
 
     # 통계값
-    rms_mean = float(np.mean(rms))
+    rms_mean = _safe_mean(rms)
     rms_std = float(np.std(rms))
     dynamic_range = float(np.percentile(rms, 95) - np.percentile(rms, 10))
 
-    centroid_mean = float(np.mean(centroid))
-    bandwidth_mean = float(np.mean(bandwidth))
-    rolloff_mean = float(np.mean(rolloff))
-    zcr_mean = float(np.mean(zcr))
-    flatness_mean = float(np.mean(flatness))
+    centroid_mean = _safe_mean(centroid)
+    bandwidth_mean = _safe_mean(bandwidth)
+    rolloff_mean = _safe_mean(rolloff)
+    zcr_mean = _safe_mean(zcr)
+    flatness_mean = _safe_mean(flatness)
 
-    # 기존 recommender.py가 쓰는 값들을 유지하면서 더 정교하게 계산
-    gain = (
-        0.40 * _score(rms_mean, 0.015, 0.16)
-        + 0.30 * _score(flatness_mean, 0.002, 0.08)
-        + 0.30 * _score(zcr_mean, 0.025, 0.16)
+    # -----------------------------
+    # 세부 점수
+    # -----------------------------
+
+    # Mud: 160~350Hz가 과하면 뭉침/먹먹함
+    mud = _score(mud_energy, 0.06, 0.24)
+
+    # Body: 따뜻한 몸통감. mud는 조금 감점.
+    body = (
+        0.75 * _score(warm_body_energy, 0.07, 0.28)
+        + 0.25 * _score(core_mid_energy, 0.08, 0.25)
+        - 0.25 * mud
     )
+    body = _clamp(body)
 
+    core_mid = _score(core_mid_energy, 0.08, 0.28)
+    upper_mid = _score(upper_mid_energy, 0.07, 0.26)
+    presence = _score(presence_energy, 0.025, 0.16)
+    fizz = _score(fizz_energy, 0.01, 0.11)
+    air = _score(air_energy, 0.002, 0.04)
+
+    # Brightness는 fizz보다 upper_mid/presence 중심.
     brightness = (
-        0.45 * _score(centroid_mean, 1000, 4800)
-        + 0.30 * _score(presence_energy, 0.02, 0.18)
-        + 0.25 * _score(air_fizz_energy, 0.01, 0.16)
+        0.40 * upper_mid
+        + 0.40 * presence
+        + 0.15 * _score(centroid_mean, 1200, 4800)
+        + 0.05 * air
+        - 0.15 * mud
     )
+    brightness = _clamp(brightness)
 
+    # Warmth는 저음 양이 아니라 warm body 중심. mud가 너무 높으면 감점.
     warmth = (
-        0.55 * _score(low_energy + low_mid_energy, 0.08, 0.40)
-        + 0.25 * _score(low_mid_energy, 0.05, 0.25)
-        + 0.20 * (10 - brightness)
+        0.65 * body
+        + 0.25 * _score(warm_body_energy + core_mid_energy, 0.14, 0.42)
+        + 0.10 * (10 - brightness)
+        - 0.25 * max(0.0, mud - 6.0)
     )
+    warmth = _clamp(warmth)
 
-    mid_focus = _score(mid_energy + high_mid_energy, 0.18, 0.55)
-
-    low_tightness = (
-        0.50 * (10 - _score(low_energy, 0.08, 0.35))
-        + 0.50 * _score(high_mid_energy / (low_energy + 1e-9), 0.8, 5.0)
+    # Mid focus는 core_mid + upper_mid 중심.
+    mid_focus = (
+        0.55 * core_mid
+        + 0.35 * upper_mid
+        + 0.10 * presence
     )
+    mid_focus = _clamp(mid_focus)
 
+    # Scoop: 미드가 빠지고 저역/고역이 상대적으로 두드러진 정도
+    edge_energy = low_energy + presence_energy + fizz_energy
+    mid_energy_total = core_mid_energy + upper_mid_energy + warm_body_energy
+    scoop = _score(edge_energy / (mid_energy_total + 1e-9), 0.4, 2.2)
+
+    # Clarity: presence/upper_mid는 살리고 mud/fizz 과다는 감점
+    clarity = (
+        0.40 * presence
+        + 0.35 * upper_mid
+        + 0.15 * air
+        - 0.30 * mud
+        - 0.15 * max(0.0, fizz - 6.0)
+    )
+    clarity = _clamp(clarity)
+
+    # Bite: 피킹이 물리는 느낌. upper_mid/presence/onset 중심
+    attack_raw = float(np.mean(onset_env) + np.percentile(onset_env, 90))
+    attack_score = _score(attack_raw, 0.3, 6.0)
+
+    bite = (
+        0.45 * attack_score
+        + 0.35 * upper_mid
+        + 0.20 * presence
+        - 0.20 * mud
+    )
+    bite = _clamp(bite)
+
+    # Compression
     compression_raw = 1.0 - (dynamic_range / (rms_mean + 1e-9))
     compression = _score(compression_raw, 0.05, 0.85)
 
-    roughness = (
-        0.50 * _score(zcr_mean, 0.025, 0.16)
-        + 0.30 * _score(flatness_mean, 0.003, 0.08)
-        + 0.20 * _score(air_fizz_energy, 0.01, 0.16)
+    # Distortion은 볼륨보다 flatness/zcr/compression 중심으로 조정
+    distortion = (
+        0.38 * _score(flatness_mean, 0.003, 0.08)
+        + 0.28 * _score(zcr_mean, 0.025, 0.16)
+        + 0.22 * compression
+        + 0.12 * fizz
     )
+    distortion = _clamp(distortion)
 
-        # -----------------------------
-    # 공간계 분석 v5
+    # Gain은 RMS 비중을 낮추고 distortion/saturation 중심
+    rms_score = _score(rms_mean, 0.015, 0.16)
+    gain = (
+        0.18 * rms_score
+        + 0.38 * distortion
+        + 0.24 * compression
+        + 0.20 * _score(flatness_mean, 0.003, 0.08)
+    )
+    gain = _clamp(gain)
+
+    roughness = (
+        0.35 * distortion
+        + 0.30 * fizz
+        + 0.20 * _score(zcr_mean, 0.025, 0.16)
+        + 0.15 * _score(flatness_mean, 0.003, 0.08)
+    )
+    roughness = _clamp(roughness)
+
+    # Low Tightness:
+    # mud가 많으면 감점, bite/upper_mid가 있으면 가점, bass가 과하면 감점
+    bass_weight = _score(bass_energy + sub_bass_energy, 0.05, 0.25)
+    low_tightness = (
+        0.35 * bite
+        + 0.30 * clarity
+        + 0.25 * _score(upper_mid_energy / (bass_energy + mud_energy + 1e-9), 0.4, 3.0)
+        + 0.10 * _score(core_mid_energy / (mud_energy + 1e-9), 0.5, 3.0)
+        - 0.35 * mud
+        - 0.15 * bass_weight
+    )
+    low_tightness = _clamp(low_tightness)
+
+    # Sustain
+    sustain_raw = rms_mean / (rms_std + 1e-9)
+    sustain = _score(sustain_raw, 1.2, 8.0)
+
+    pick_attack = bite
+
     # -----------------------------
-    # 핵심:
-    # - ambience: 최종 공간감 점수
-    # - reverb_tail: 어택 이후 잔향 꼬리
-    # - dry_sustain: 리버브가 아니라 기타 자체 서스테인일 가능성
-    # - room_wetness: 전체 저레벨 잔향/방 울림 가능성
-    # - delay_echo: 반복성 있는 에너지 패턴 가능성
-
+    # 공간계 분석 v6
+    # -----------------------------
     rms_safe = rms + 1e-9
 
-    # dry sustain 후보
-    sustain_raw_for_space = rms_mean / (rms_std + 1e-9)
-    dry_sustain = _score(sustain_raw_for_space, 1.2, 8.0)
+    dry_sustain = sustain
 
-    # compression 후보
-    compression_raw_for_space = 1.0 - (dynamic_range / (rms_mean + 1e-9))
-    compression_like = _score(compression_raw_for_space, 0.05, 0.85)
+    compression_like = compression
+    distortion_like = distortion
 
-    # distortion 후보
-    distortion_like = (
-        0.50 * _score(flatness_mean, 0.003, 0.08)
-        + 0.30 * _score(zcr_mean, 0.025, 0.16)
-        + 0.20 * _score(rms_mean, 0.015, 0.16)
-    )
-
-    # onset 이후 tail 측정
     onset_frames = librosa.onset.onset_detect(
         y=y,
         sr=sr,
@@ -219,10 +326,9 @@ def analyze_audio(path: str) -> dict[str, Any]:
         tail_ratios.append(late / (peak + 1e-9))
         decay_slopes.append(late / (middle + 1e-9))
 
-    tail_persistence = float(np.median(tail_ratios)) if tail_ratios else 0.0
-    tail_decay_smoothness = float(np.median(decay_slopes)) if decay_slopes else 0.0
+    tail_persistence = _safe_median(tail_ratios)
+    tail_decay_smoothness = _safe_median(decay_slopes)
 
-    # 전체 RMS 분포 기반 room/wetness
     rms_95 = float(np.percentile(rms_safe, 95))
     rms_30 = float(np.percentile(rms_safe, 30))
     rms_20 = float(np.percentile(rms_safe, 20))
@@ -232,27 +338,22 @@ def analyze_audio(path: str) -> dict[str, Any]:
     low_floor_ratio = rms_10 / (rms_95 + 1e-9)
     room_floor_ratio = rms_30 / (rms_95 + 1e-9)
 
-    # reverb_tail: 어택 후 후반부 tail 중심
-    reverb_tail = (
+    reverb_tail_raw = (
         0.55 * _score(tail_persistence, 0.30, 0.72)
         + 0.30 * _score(tail_decay_smoothness, 0.42, 0.88)
         + 0.15 * _score(global_tail_ratio, 0.20, 0.50)
     )
 
-    # room_wetness: 작은 잔향/방 울림/저레벨 floor
-    room_wetness = (
+    room_wetness_raw = (
         0.45 * _score(room_floor_ratio, 0.18, 0.50)
         + 0.35 * _score(low_floor_ratio, 0.06, 0.25)
         + 0.20 * _score(bandwidth_mean, 1200, 4500)
     )
 
-    # delay_echo: onset 간격의 반복성이 있으면 올라감
     delay_echo = 0.0
     if len(onset_frames) >= 4:
         onset_times = librosa.frames_to_time(onset_frames, sr=sr)
         intervals = np.diff(onset_times)
-
-        # 너무 짧거나 너무 긴 간격 제외
         intervals = intervals[(intervals >= 0.12) & (intervals <= 1.2)]
 
         if len(intervals) >= 3:
@@ -261,14 +362,11 @@ def analyze_audio(path: str) -> dict[str, Any]:
             regularity = 1.0 - (interval_std / (interval_mean + 1e-9))
             regularity = _clamp(regularity, 0.0, 1.0)
 
-            # 반복성이 있고 tail도 어느 정도 있으면 delay 가능성
             delay_echo = (
                 0.60 * _score(regularity, 0.35, 0.90)
                 + 0.40 * _score(tail_persistence, 0.24, 0.65)
             )
 
-    # dry sustain 보정
-    # dry_sustain/compression/distortion이 높으면 reverb_tail, room_wetness를 깎는다.
     dry_penalty = 0.0
     dry_penalty += dry_sustain * 0.55
     dry_penalty += compression_like * 0.30
@@ -280,65 +378,26 @@ def analyze_audio(path: str) -> dict[str, Any]:
     if global_tail_ratio < 0.26:
         dry_penalty += 1.2
 
-    if dry_sustain >= 6.0 and reverb_tail < 6.5:
+    if dry_sustain >= 6.0 and reverb_tail_raw < 6.5:
         dry_penalty += 1.8
 
-    adjusted_reverb_tail = _clamp(reverb_tail - dry_penalty)
-    adjusted_room_wetness = _clamp(room_wetness - (dry_penalty * 0.45))
+    adjusted_reverb_tail = _clamp(reverb_tail_raw - dry_penalty)
+    adjusted_room_wetness = _clamp(room_wetness_raw - (dry_penalty * 0.45))
 
-    # 최종 ambience는 reverb 중심으로 계산
     ambience = (
         0.55 * adjusted_reverb_tail
         + 0.30 * adjusted_room_wetness
         + 0.15 * delay_echo
     )
 
-    # 리버브 후보가 낮으면 더 보수적으로 누름
     if adjusted_reverb_tail < 4.0 and adjusted_room_wetness < 4.0:
         ambience *= 0.55
 
     ambience = _clamp(ambience)
 
-    space_profile = {
-        "ambience": round(_clamp(ambience), 1),
-        "reverb_tail": round(_clamp(adjusted_reverb_tail), 1),
-        "dry_sustain": round(_clamp(dry_sustain), 1),
-        "room_wetness": round(_clamp(adjusted_room_wetness), 1),
-        "delay_echo": round(_clamp(delay_echo), 1),
-    }
-
-
-    debug_space = {
-        "tail_persistence": round(tail_persistence, 4),
-        "tail_decay_smoothness": round(tail_decay_smoothness, 4),
-        "global_tail_ratio": round(global_tail_ratio, 4),
-        "low_floor_ratio": round(low_floor_ratio, 4),
-        "room_floor_ratio": round(room_floor_ratio, 4),
-        "raw_reverb_tail": round(reverb_tail, 2),
-        "raw_room_wetness": round(room_wetness, 2),
-        "dry_sustain": round(dry_sustain, 2),
-        "compression_like": round(compression_like, 2),
-        "distortion_like": round(distortion_like, 2),
-        "dry_penalty": round(dry_penalty, 2),
-        "delay_echo": round(delay_echo, 2),
-        "final_ambience": round(_clamp(ambience), 2),
-    }
-    # 새 점수들
-    distortion = (
-        0.45 * _score(flatness_mean, 0.003, 0.08)
-        + 0.35 * _score(zcr_mean, 0.025, 0.16)
-        + 0.20 * _score(rms_mean, 0.015, 0.16)
-    )
-
-    pick_attack = _score(attack_raw, 0.3, 6.0)
-
-    sustain_raw = rms_mean / (rms_std + 1e-9)
-    sustain = _score(sustain_raw, 1.2, 8.0)
-
-    fizz = _score(air_fizz_energy, 0.01, 0.16)
-
-    presence = _score(presence_energy + high_mid_energy, 0.08, 0.35)
-
+    # -----------------------------
+    # 결과 구성
+    # -----------------------------
     stats = AudioStats(
         duration=round(duration, 2),
         sample_rate=sr,
@@ -350,12 +409,15 @@ def analyze_audio(path: str) -> dict[str, Any]:
         spectral_rolloff=round(rolloff_mean, 2),
         zero_crossing_rate=round(zcr_mean, 5),
         spectral_flatness=round(flatness_mean, 5),
-        low_energy=round(low_energy, 5),
-        low_mid_energy=round(low_mid_energy, 5),
-        mid_energy=round(mid_energy, 5),
-        high_mid_energy=round(high_mid_energy, 5),
+        sub_bass_energy=round(sub_bass_energy, 5),
+        bass_energy=round(bass_energy, 5),
+        mud_energy=round(mud_energy, 5),
+        warm_body_energy=round(warm_body_energy, 5),
+        core_mid_energy=round(core_mid_energy, 5),
+        upper_mid_energy=round(upper_mid_energy, 5),
         presence_energy=round(presence_energy, 5),
-        air_fizz_energy=round(air_fizz_energy, 5),
+        fizz_energy=round(fizz_energy, 5),
+        air_energy=round(air_energy, 5),
     )
 
     scores = ToneScores(
@@ -372,19 +434,61 @@ def analyze_audio(path: str) -> dict[str, Any]:
         sustain=round(_clamp(sustain), 1),
         fizz=round(_clamp(fizz), 1),
         presence=round(_clamp(presence), 1),
+        body=round(_clamp(body), 1),
+        mud=round(_clamp(mud), 1),
+        core_mid=round(_clamp(core_mid), 1),
+        upper_mid=round(_clamp(upper_mid), 1),
+        air=round(_clamp(air), 1),
+        clarity=round(_clamp(clarity), 1),
+        scoop=round(_clamp(scoop), 1),
+        bite=round(_clamp(bite), 1),
     )
 
     eq_profile = {
+        "sub_bass": round(sub_bass_energy * 10, 2),
+        "bass": round(bass_energy * 10, 2),
+        "mud": round(mud_energy * 10, 2),
+        "warm_body": round(warm_body_energy * 10, 2),
+        "core_mid": round(core_mid_energy * 10, 2),
+        "upper_mid": round(upper_mid_energy * 10, 2),
+        "presence": round(presence_energy * 10, 2),
+        "fizz": round(fizz_energy * 10, 2),
+        "air": round(air_energy * 10, 2),
+
+        # 기존 프론트/추천 호환용 이름
         "low": round(low_energy * 10, 2),
         "low_mid": round(low_mid_energy * 10, 2),
         "mid": round(mid_energy * 10, 2),
         "high_mid": round(high_mid_energy * 10, 2),
-        "presence": round(presence_energy * 10, 2),
-        "air_fizz": round(air_fizz_energy * 10, 2),
+        "air_fizz": round(fizz_energy * 10, 2),
+    }
+
+    space_profile = {
+        "ambience": round(_clamp(ambience), 1),
+        "reverb_tail": round(_clamp(adjusted_reverb_tail), 1),
+        "dry_sustain": round(_clamp(dry_sustain), 1),
+        "room_wetness": round(_clamp(adjusted_room_wetness), 1),
+        "delay_echo": round(_clamp(delay_echo), 1),
+    }
+
+    debug_space = {
+        "tail_persistence": round(tail_persistence, 4),
+        "tail_decay_smoothness": round(tail_decay_smoothness, 4),
+        "global_tail_ratio": round(global_tail_ratio, 4),
+        "low_floor_ratio": round(low_floor_ratio, 4),
+        "room_floor_ratio": round(room_floor_ratio, 4),
+        "raw_reverb_tail": round(reverb_tail_raw, 2),
+        "raw_room_wetness": round(room_wetness_raw, 2),
+        "dry_sustain": round(dry_sustain, 2),
+        "compression_like": round(compression_like, 2),
+        "distortion_like": round(distortion_like, 2),
+        "dry_penalty": round(dry_penalty, 2),
+        "delay_echo": round(delay_echo, 2),
+        "final_ambience": round(_clamp(ambience), 2),
     }
 
     return {
-        "version": "space-analysis-v5",
+        "version": "tone-analysis-v6",
         "stats": asdict(stats),
         "scores": asdict(scores),
         "eq_profile": eq_profile,
