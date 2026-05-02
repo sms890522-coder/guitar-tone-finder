@@ -64,31 +64,40 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
     fizz = _get_score(scores, "fizz")
     presence = _get_score(scores, "presence", brightness)
 
-    # 실제 분류용 드라이브 강도
-    # gain 하나만 보면 녹음 볼륨/압축 상태 때문에 하이게인을 클린으로 오판할 수 있어서
-    # distortion, roughness, compression, fizz, sustain을 함께 본다.
+    high_gain_likelihood = _get_score(scores, "high_gain_likelihood", gain)
+
+        # 실제 분류용 드라이브 강도
+    # gain보다 high_gain_likelihood를 우선한다.
     drive_intensity = _clamp(
-        0.28 * gain
-        + 0.30 * distortion
-        + 0.20 * roughness
-        + 0.12 * compression
-        + 0.06 * fizz
+        0.18 * gain
+        + 0.34 * high_gain_likelihood
+        + 0.20 * distortion
+        + 0.14 * roughness
+        + 0.10 * compression
         + 0.04 * sustain
     )
 
-    # 하이게인 보정
-    # gain이 낮게 잡혀도 왜곡/거칠기/압축이 높으면 실제로는 드라이브 톤으로 본다.
-    if distortion >= 6.5 and roughness >= 5.5:
+    # 하이게인 강제 보정
+    if high_gain_likelihood >= 7.0:
+        drive_intensity = max(drive_intensity, 7.2)
+
+    if high_gain_likelihood >= 8.0:
+        drive_intensity = max(drive_intensity, 8.0)
+
+    if distortion >= 6.0 and compression >= 6.0 and sustain >= 5.5:
         drive_intensity = max(drive_intensity, 7.0)
 
-    if distortion >= 7.5 or roughness >= 7.5:
-        drive_intensity = max(drive_intensity, 7.4)
+    if roughness >= 6.5 and high_gain_likelihood >= 6.5:
+        drive_intensity = max(drive_intensity, 7.2)
 
-    if compression >= 7.0 and distortion >= 5.8:
-        drive_intensity = max(drive_intensity, 6.8)
-
-    if fizz >= 7.0 and distortion >= 5.5:
-        drive_intensity = max(drive_intensity, 6.7)
+    # 클린 보호:
+    # high_gain_likelihood, distortion, compression이 전부 낮을 때만 클린으로 허용
+    is_probably_clean = (
+        high_gain_likelihood < 4.5
+        and distortion < 4.5
+        and compression < 4.5
+        and roughness < 5.0
+    )
 
     body = _get_score(scores, "body", warmth)
     mud = _get_score(scores, "mud", 0.0)
@@ -138,17 +147,21 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
         tone_type = "Edge of Breakup / Light Drive"
         tone_summary = "클린보다는 살짝 깨지는 엣지 오브 브레이크업 또는 라이트 드라이브 성향입니다."
 
-    elif brightness >= 6.0:
+    elif is_probably_clean and brightness >= 6.0:
         tone_type = "Bright Clean"
         tone_summary = "게인은 낮고 밝은 클린톤 성향입니다."
 
-    elif warmth >= 6.0:
+    elif is_probably_clean and warmth >= 6.0:
         tone_type = "Warm Clean"
         tone_summary = "따뜻하고 부드러운 클린톤 성향입니다."
 
-    else:
+    elif is_probably_clean:
         tone_type = "Balanced Clean / Low Gain"
         tone_summary = "드라이브가 강하지 않은 밸런스형 클린 또는 로우게인 톤입니다."
+
+    else:
+        tone_type = "Driven Guitar Tone"
+        tone_summary = "클린보다는 드라이브나 왜곡 성향이 감지되는 기타톤입니다."
 
     # -----------------------------
     # 2. 앰프 계열 추천 - 세분화 v2

@@ -67,6 +67,7 @@ class ToneScores:
     clarity: float
     scoop: float
     bite: float
+    high_gain_likelihood: float
 
 
 @dataclass
@@ -267,6 +268,60 @@ def analyze_audio(path: str) -> dict[str, Any]:
     )
     roughness = _clamp(roughness)
 
+    # -----------------------------
+    # High Gain Likelihood
+    # -----------------------------
+    # 일반 gain/distortion 점수가 낮게 나와도,
+    # 하이게인 특유의 압축감, 서스테인, 중고역 밀도, 다이내믹 억제를 감지하기 위한 별도 점수.
+
+    rms_p95 = float(np.percentile(rms, 95))
+    rms_p50 = float(np.percentile(rms, 50))
+    rms_p20 = float(np.percentile(rms, 20))
+
+    # 다이내믹이 좁으면 하이게인/컴프레션 가능성
+    density_dynamic = 1.0 - ((rms_p95 - rms_p20) / (rms_p95 + 1e-9))
+    density_dynamic_score = _score(density_dynamic, 0.25, 0.88)
+
+    # 중고역 밀도: 하이게인 리프/리드에서 core_mid~presence가 촘촘한 경우가 많음
+    driven_band_density = _score(
+        core_mid_energy + upper_mid_energy + presence_energy,
+        0.16,
+        0.55,
+    )
+
+    # 캐비넷/IR로 fizz가 정리된 하이게인도 있으므로 fizz 비중은 낮게
+    saturation_density = (
+        0.30 * compression
+        + 0.22 * sustain
+        + 0.22 * driven_band_density
+        + 0.14 * roughness
+        + 0.08 * fizz
+        + 0.04 * presence
+    )
+
+    high_gain_likelihood = (
+        0.45 * saturation_density
+        + 0.35 * density_dynamic_score
+        + 0.20 * distortion
+    )
+
+    # 하이게인 보정 규칙
+    if compression >= 6.5 and sustain >= 6.0 and driven_band_density >= 5.5:
+        high_gain_likelihood = max(high_gain_likelihood, 7.0)
+
+    if roughness >= 6.0 and compression >= 6.0:
+        high_gain_likelihood = max(high_gain_likelihood, 6.8)
+
+    if distortion >= 6.0 and driven_band_density >= 6.0:
+        high_gain_likelihood = max(high_gain_likelihood, 7.0)
+
+    # 클린톤 오판 방지:
+    # brightness만 높고 compression/sustain이 낮으면 하이게인으로 올리지 않음
+    if compression < 3.5 and sustain < 4.0 and distortion < 4.5:
+        high_gain_likelihood = min(high_gain_likelihood, 4.0)
+
+    high_gain_likelihood = _clamp(high_gain_likelihood)
+
     # Low Tightness:
     # mud가 많으면 감점, bite/upper_mid가 있으면 가점, bass가 과하면 감점
     bass_weight = _score(bass_energy + sub_bass_energy, 0.05, 0.25)
@@ -442,6 +497,7 @@ def analyze_audio(path: str) -> dict[str, Any]:
         clarity=round(_clamp(clarity), 1),
         scoop=round(_clamp(scoop), 1),
         bite=round(_clamp(bite), 1),
+        high_gain_likelihood=round(_clamp(high_gain_likelihood), 1),
     )
 
     eq_profile = {
