@@ -161,15 +161,21 @@ def analyze_audio(path: str) -> dict[str, Any]:
         + 0.20 * _score(air_fizz_energy, 0.01, 0.16)
     )
 
-    # 리버브/공간감 추정 v4
+        # -----------------------------
+    # 공간계 분석 v5
+    # -----------------------------
     # 핵심:
-    # - 드라이한 긴 서스테인/컴프레션 기타톤을 리버브로 오판하지 않도록 더 보수적으로 계산
-    # - 리버브는 "어택 이후 후반부 tail"과 "저레벨 잔향 에너지"가 동시에 높을 때만 높게 평가
+    # - ambience: 최종 공간감 점수
+    # - reverb_tail: 어택 이후 잔향 꼬리
+    # - dry_sustain: 리버브가 아니라 기타 자체 서스테인일 가능성
+    # - room_wetness: 전체 저레벨 잔향/방 울림 가능성
+    # - delay_echo: 반복성 있는 에너지 패턴 가능성
+
     rms_safe = rms + 1e-9
 
-    # sustain 후보: RMS가 일정하게 유지되면 높아짐
+    # dry sustain 후보
     sustain_raw_for_space = rms_mean / (rms_std + 1e-9)
-    sustain_like = _score(sustain_raw_for_space, 1.2, 8.0)
+    dry_sustain = _score(sustain_raw_for_space, 1.2, 8.0)
 
     # compression 후보
     compression_raw_for_space = 1.0 - (dynamic_range / (rms_mean + 1e-9))
@@ -207,70 +213,116 @@ def analyze_audio(path: str) -> dict[str, Any]:
         if peak <= 1e-6:
             continue
 
-        early = float(np.mean(segment[: max(3, int(len(segment) * 0.18))]))
         middle = float(np.mean(segment[int(len(segment) * 0.35): int(len(segment) * 0.55)]))
         late = float(np.mean(segment[int(len(segment) * 0.72):]))
 
-        # 리버브는 late가 peak 대비 어느 정도 남아야 함
         tail_ratios.append(late / (peak + 1e-9))
-
-        # 드라이 톤은 early→late가 비교적 빨리 떨어짐
-        # 리버브는 middle→late가 덜 급격하게 떨어지는 경향
-        decay_slope = late / (middle + 1e-9)
-        decay_slopes.append(decay_slope)
+        decay_slopes.append(late / (middle + 1e-9))
 
     tail_persistence = float(np.median(tail_ratios)) if tail_ratios else 0.0
     tail_decay_smoothness = float(np.median(decay_slopes)) if decay_slopes else 0.0
 
-    # 전체 RMS 분포 기반 저레벨 tail
+    # 전체 RMS 분포 기반 room/wetness
     rms_95 = float(np.percentile(rms_safe, 95))
+    rms_30 = float(np.percentile(rms_safe, 30))
     rms_20 = float(np.percentile(rms_safe, 20))
     rms_10 = float(np.percentile(rms_safe, 10))
 
     global_tail_ratio = rms_20 / (rms_95 + 1e-9)
     low_floor_ratio = rms_10 / (rms_95 + 1e-9)
+    room_floor_ratio = rms_30 / (rms_95 + 1e-9)
 
-    # 리버브 후보 점수: threshold를 높여 더 보수적으로 잡음
-    reverb_candidate = (
-        0.45 * _score(tail_persistence, 0.28, 0.72)
-        + 0.25 * _score(tail_decay_smoothness, 0.35, 0.88)
-        + 0.20 * _score(global_tail_ratio, 0.18, 0.48)
-        + 0.10 * _score(low_floor_ratio, 0.06, 0.25)
+    # reverb_tail: 어택 후 후반부 tail 중심
+    reverb_tail = (
+        0.55 * _score(tail_persistence, 0.30, 0.72)
+        + 0.30 * _score(tail_decay_smoothness, 0.42, 0.88)
+        + 0.15 * _score(global_tail_ratio, 0.20, 0.50)
     )
 
-    # 드라이 롱서스테인 오판 방지 페널티
-    dryness_penalty = 0.0
+    # room_wetness: 작은 잔향/방 울림/저레벨 floor
+    room_wetness = (
+        0.45 * _score(room_floor_ratio, 0.18, 0.50)
+        + 0.35 * _score(low_floor_ratio, 0.06, 0.25)
+        + 0.20 * _score(bandwidth_mean, 1200, 4500)
+    )
 
-    # sustain/compression/distortion이 높으면 reverb보다 dry sustain일 가능성이 큼
-    dryness_penalty += sustain_like * 0.70
-    dryness_penalty += compression_like * 0.40
-    dryness_penalty += distortion_like * 0.30
+    # delay_echo: onset 간격의 반복성이 있으면 올라감
+    delay_echo = 0.0
+    if len(onset_frames) >= 4:
+        onset_times = librosa.frames_to_time(onset_frames, sr=sr)
+        intervals = np.diff(onset_times)
 
-    # tail 조건이 충분히 강하지 않으면 추가 페널티
-    if tail_persistence < 0.38:
-        dryness_penalty += 2.0
+        # 너무 짧거나 너무 긴 간격 제외
+        intervals = intervals[(intervals >= 0.12) & (intervals <= 1.2)]
 
-    if tail_decay_smoothness < 0.48:
-        dryness_penalty += 1.5
+        if len(intervals) >= 3:
+            interval_std = float(np.std(intervals))
+            interval_mean = float(np.mean(intervals))
+            regularity = 1.0 - (interval_std / (interval_mean + 1e-9))
+            regularity = _clamp(regularity, 0.0, 1.0)
 
-    if global_tail_ratio < 0.24:
-        dryness_penalty += 1.2
+            # 반복성이 있고 tail도 어느 정도 있으면 delay 가능성
+            delay_echo = (
+                0.60 * _score(regularity, 0.35, 0.90)
+                + 0.40 * _score(tail_persistence, 0.24, 0.65)
+            )
 
-    # 아주 드라이한 톤에서 흔한 패턴:
-    # sustain은 높은데 low-level floor는 낮음 → ambience 강하게 낮춤
-    if sustain_like >= 6.0 and global_tail_ratio < 0.30:
-        dryness_penalty += 2.0
+    # dry sustain 보정
+    # dry_sustain/compression/distortion이 높으면 reverb_tail, room_wetness를 깎는다.
+    dry_penalty = 0.0
+    dry_penalty += dry_sustain * 0.55
+    dry_penalty += compression_like * 0.30
+    dry_penalty += distortion_like * 0.25
 
-    if distortion_like >= 6.0 and tail_persistence < 0.45:
-        dryness_penalty += 1.5
+    if tail_persistence < 0.40:
+        dry_penalty += 1.6
 
-    ambience = reverb_candidate - dryness_penalty
+    if global_tail_ratio < 0.26:
+        dry_penalty += 1.2
 
-    # 낮은 리버브 후보는 더 강하게 눌러서 드라이 톤이 4~5로 뜨는 문제를 줄임
-    if reverb_candidate < 5.0:
+    if dry_sustain >= 6.0 and reverb_tail < 6.5:
+        dry_penalty += 1.8
+
+    adjusted_reverb_tail = _clamp(reverb_tail - dry_penalty)
+    adjusted_room_wetness = _clamp(room_wetness - (dry_penalty * 0.45))
+
+    # 최종 ambience는 reverb 중심으로 계산
+    ambience = (
+        0.55 * adjusted_reverb_tail
+        + 0.30 * adjusted_room_wetness
+        + 0.15 * delay_echo
+    )
+
+    # 리버브 후보가 낮으면 더 보수적으로 누름
+    if adjusted_reverb_tail < 4.0 and adjusted_room_wetness < 4.0:
         ambience *= 0.55
 
     ambience = _clamp(ambience)
+
+    space_profile = {
+        "ambience": round(_clamp(ambience), 1),
+        "reverb_tail": round(_clamp(adjusted_reverb_tail), 1),
+        "dry_sustain": round(_clamp(dry_sustain), 1),
+        "room_wetness": round(_clamp(adjusted_room_wetness), 1),
+        "delay_echo": round(_clamp(delay_echo), 1),
+    }
+
+
+    debug_space = {
+        "tail_persistence": round(tail_persistence, 4),
+        "tail_decay_smoothness": round(tail_decay_smoothness, 4),
+        "global_tail_ratio": round(global_tail_ratio, 4),
+        "low_floor_ratio": round(low_floor_ratio, 4),
+        "room_floor_ratio": round(room_floor_ratio, 4),
+        "raw_reverb_tail": round(reverb_tail, 2),
+        "raw_room_wetness": round(room_wetness, 2),
+        "dry_sustain": round(dry_sustain, 2),
+        "compression_like": round(compression_like, 2),
+        "distortion_like": round(distortion_like, 2),
+        "dry_penalty": round(dry_penalty, 2),
+        "delay_echo": round(delay_echo, 2),
+        "final_ambience": round(_clamp(ambience), 2),
+    }
     # 새 점수들
     distortion = (
         0.45 * _score(flatness_mean, 0.003, 0.08)
@@ -331,8 +383,11 @@ def analyze_audio(path: str) -> dict[str, Any]:
         "air_fizz": round(air_fizz_energy * 10, 2),
     }
 
-    return {
+     return {
+        "version": "space-analysis-v5",
         "stats": asdict(stats),
         "scores": asdict(scores),
         "eq_profile": eq_profile,
+        "space": space_profile,
+        "debug_space": debug_space,
     }
