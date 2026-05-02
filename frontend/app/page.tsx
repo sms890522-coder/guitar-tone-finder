@@ -48,24 +48,41 @@ type Recommendation = {
     tip: string;
   };
   ambience: {
+    character?: string;
     reverb: string;
     reverb_mix: number;
     delay: string;
     delay_mix: number;
     tip: string;
+    space_note?: string;
+    reverb_tail?: number;
+    dry_sustain?: number;
+    room_wetness?: number;
+    delay_echo?: number;
   };
   eq_tips: string[];
   chain: string[];
   notes: string[];
 };
 
+type SpaceProfile = {
+  ambience: number;
+  reverb_tail: number;
+  dry_sustain: number;
+  room_wetness: number;
+  delay_echo: number;
+};
+
 type Result = {
   ok: boolean;
   filename: string;
   analysis: {
+    version?: string;
     stats: Record<string, number>;
     scores: Scores;
     eq_profile: EqProfile;
+    space?: SpaceProfile;
+    debug_space?: Record<string, number>;
   };
   recommendation: Recommendation;
 };
@@ -246,6 +263,7 @@ function ResultPanel({ result }: { result: Result }) {
   const scores = result?.analysis?.scores || ({} as Scores);
   const eqProfile = result?.analysis?.eq_profile || ({} as EqProfile);
   const recommendation = result?.recommendation || ({} as Recommendation);
+  const space = result?.analysis?.space;
 
   const ampExamples = Array.isArray(recommendation.amp_examples)
     ? recommendation.amp_examples
@@ -346,6 +364,22 @@ function ResultPanel({ result }: { result: Result }) {
         </div>
       </div>
 
+      {space && (
+        <div className="mt-6 rounded-[1.5rem] bg-white/5 p-5">
+          <h4 className="font-black">Space Analysis</h4>
+          <p className="mt-2 text-sm leading-6 text-slate-400">
+            리버브와 드라이 서스테인을 분리해서 추정한 값입니다.
+          </p>
+
+          <div className="mt-4 space-y-3">
+            <ScoreBar title="Reverb Tail" desc="어택 이후 잔향 꼬리" value={space.reverb_tail} />
+            <ScoreBar title="Dry Sustain" desc="기타 자체 서스테인" value={space.dry_sustain} />
+            <ScoreBar title="Room Wetness" desc="방 울림/저레벨 공간감" value={space.room_wetness} />
+            <ScoreBar title="Delay Echo" desc="반복 딜레이 가능성" value={space.delay_echo} />
+          </div>
+        </div>
+      )}
+
       <div className="mt-6 rounded-[1.5rem] bg-white/5 p-5">
         <h4 className="font-black">추천 시그널 체인</h4>
         <div className="mt-4 flex flex-wrap gap-2">
@@ -364,7 +398,11 @@ function ResultPanel({ result }: { result: Result }) {
         <InfoCard title="Drive" main={drive.type} body={drive.purpose} />
         <InfoCard title="Cabinet" main={cabinet.cab} body={cabinet.tip} />
         <InfoCard title="Mic" main={cabinet.mic} body="추천 마이크/IR 방향" />
-        <InfoCard title="Ambience" main={ambience.reverb} body={ambience.tip} />
+       <InfoCard
+  title={ambience.character || 'Ambience'}
+  main={ambience.reverb}
+  body={ambience.space_note || ambience.tip}
+/>
       </div>
 
       <div className="mt-6 rounded-[1.5rem] bg-white/5 p-5">
