@@ -68,7 +68,7 @@ class ToneScores:
     scoop: float
     bite: float
     high_gain_likelihood: float
-
+    lead_gain_likelihood: float
 
 @dataclass
 class AudioStats:
