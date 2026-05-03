@@ -104,17 +104,33 @@ def analyze_audio(path: str) -> dict[str, Any]:
     - 실제 장비 판별이 아니라 비슷한 톤 세팅을 위한 특징 추정값이다.
     """
 
-    y, sr = librosa.load(path, sr=44100, mono=True, duration=90)
+    # stereo로 먼저 읽고, 기존 분석용 mono 신호는 따로 만든다.
+    # 이렇게 해야 코러스/스테레오 딜레이/핑퐁 딜레이/더블트래킹을 추정할 수 있다.
+    y_loaded, sr = librosa.load(path, sr=44100, mono=False, duration=90)
 
-    if y.size == 0:
+    if y_loaded.size == 0:
         raise ValueError("Audio file is empty or could not be decoded.")
 
-    # 앞뒤 무음 제거
-    y, _ = librosa.effects.trim(y, top_db=35)
+    if y_loaded.ndim == 1:
+        # 모노 파일
+        y_full = y_loaded
+        y_stereo_full = np.vstack([y_loaded, y_loaded])
+        is_stereo_source = False
+    else:
+        # 스테레오 또는 멀티채널 파일이면 앞 2채널만 사용
+        y_stereo_full = y_loaded[:2]
+        y_full = librosa.to_mono(y_stereo_full)
+        is_stereo_source = True
+
+    # 앞뒤 무음 제거 기준은 mono 신호로 잡고, stereo도 같은 구간으로 자른다.
+    y, trim_index = librosa.effects.trim(y_full, top_db=35)
+
+    start_idx, end_idx = int(trim_index[0]), int(trim_index[1])
+    y_stereo = y_stereo_full[:, start_idx:end_idx]
 
     if len(y) < sr * 3:
         raise ValueError("오디오가 너무 짧거나 무음에 가깝습니다. 최소 3초 이상의 기타 소리를 업로드해 주세요.")
-
+        
     duration = float(librosa.get_duration(y=y, sr=sr))
 
     # 기본 특징
@@ -617,6 +633,149 @@ def analyze_audio(path: str) -> dict[str, Any]:
         "delay_echo": round(_clamp(delay_echo), 1),
     }
 
+    # -----------------------------
+    # Effects Analysis v1
+    # -----------------------------
+    # stereo_width: 좌우 폭
+    # chorus_likelihood: 코러스/모듈레이션 가능성
+    # delay_likelihood: 딜레이 반복 가능성
+    # ping_pong_delay: 좌우 교차 딜레이 가능성
+    # double_tracking: 더블트래킹/스테레오 더블 가능성
+
+    left = y_stereo[0]
+    right = y_stereo[1]
+
+    min_len = min(len(left), len(right))
+    left = left[:min_len]
+    right = right[:min_len]
+
+    # 좌우 에너지
+    left_rms = float(np.sqrt(np.mean(left ** 2)) + 1e-9)
+    right_rms = float(np.sqrt(np.mean(right ** 2)) + 1e-9)
+
+    mid_signal = (left + right) * 0.5
+    side_signal = (left - right) * 0.5
+
+    mid_rms = float(np.sqrt(np.mean(mid_signal ** 2)) + 1e-9)
+    side_rms = float(np.sqrt(np.mean(side_signal ** 2)) + 1e-9)
+
+    # 좌우 폭: side/mid 비율
+    side_mid_ratio = side_rms / (mid_rms + 1e-9)
+    stereo_width = _score(side_mid_ratio, 0.02, 0.65)
+
+    # 좌우 밸런스 차이
+    lr_balance_diff = abs(left_rms - right_rms) / (max(left_rms, right_rms) + 1e-9)
+    lr_balance_score = _score(lr_balance_diff, 0.02, 0.45)
+
+    # 좌우 상관도: 낮을수록 stereo effect 가능성이 높음
+    if min_len > 10:
+        corr_matrix = np.corrcoef(left, right)
+        lr_correlation = float(corr_matrix[0, 1]) if corr_matrix.shape == (2, 2) else 1.0
+        if math.isnan(lr_correlation) or math.isinf(lr_correlation):
+            lr_correlation = 1.0
+    else:
+        lr_correlation = 1.0
+
+    decorrelation = _score(1.0 - lr_correlation, 0.05, 0.90)
+
+    # 피치/스펙트럼 흔들림 추정
+    # 코러스는 명확한 반복 딜레이보다는 미세한 흔들림과 넓은 스테레오감을 만든다.
+    chroma = librosa.feature.chroma_stft(y=y, sr=sr)
+    chroma_flux = np.mean(np.abs(np.diff(chroma, axis=1))) if chroma.shape[1] > 1 else 0.0
+    modulation_flux = _score(float(chroma_flux), 0.015, 0.085)
+
+    # spectral centroid가 시간에 따라 흔들리는 정도
+    centroid_std = float(np.std(centroid))
+    centroid_motion = _score(centroid_std, 80, 900)
+
+    modulation_depth = (
+        0.45 * modulation_flux
+        + 0.30 * centroid_motion
+        + 0.25 * decorrelation
+    )
+    modulation_depth = _clamp(modulation_depth)
+
+    # 기존 delay_echo는 onset 간격 기반이므로 딜레이 가능성의 한 축으로 사용
+    delay_likelihood = (
+        0.55 * delay_echo
+        + 0.20 * reverb_tail_raw
+        + 0.15 * stereo_width
+        + 0.10 * decorrelation
+    )
+    delay_likelihood = _clamp(delay_likelihood)
+
+    # ping-pong delay 추정:
+    # 좌우 폭이 있고, 좌우 밸런스가 다르며, delay_echo가 높으면 가능성 증가
+    ping_pong_delay = (
+        0.45 * delay_echo
+        + 0.30 * stereo_width
+        + 0.25 * lr_balance_score
+    )
+
+    if delay_echo >= 5.5 and stereo_width >= 5.0:
+        ping_pong_delay = max(ping_pong_delay, 6.5)
+
+    if not is_stereo_source:
+        ping_pong_delay = min(ping_pong_delay, 2.0)
+
+    ping_pong_delay = _clamp(ping_pong_delay)
+
+    # chorus 추정:
+    # stereo_width + decorrelation + modulation_depth는 높고,
+    # delay_likelihood가 너무 높으면 딜레이 쪽으로 본다.
+    chorus_likelihood = (
+        0.35 * stereo_width
+        + 0.30 * modulation_depth
+        + 0.25 * decorrelation
+        + 0.10 * clarity
+    )
+
+    # 딜레이가 너무 강하면 코러스 점수 일부 감점
+    if delay_likelihood >= 7.0:
+        chorus_likelihood -= 1.2
+
+    # 리버브 tail이 매우 크고 modulation이 낮으면 코러스보다 리버브일 가능성
+    if adjusted_reverb_tail >= 7.0 and modulation_depth < 5.0:
+        chorus_likelihood -= 1.0
+
+    # 모노 소스면 코러스 확신도를 낮춘다.
+    if not is_stereo_source:
+        chorus_likelihood = min(chorus_likelihood, 4.0)
+
+    chorus_likelihood = _clamp(chorus_likelihood)
+
+    # double tracking:
+    # stereo_width와 decorrelation은 높지만 modulation_depth/delay_echo가 과하지 않은 경우
+    double_tracking = (
+        0.40 * stereo_width
+        + 0.35 * decorrelation
+        + 0.15 * lr_balance_score
+        + 0.10 * body
+    )
+
+    if modulation_depth >= 7.0:
+        double_tracking -= 1.0
+
+    if delay_likelihood >= 6.5:
+        double_tracking -= 1.2
+
+    if not is_stereo_source:
+        double_tracking = min(double_tracking, 3.0)
+
+    double_tracking = _clamp(double_tracking)
+
+    effects_profile = {
+        "is_stereo_source": bool(is_stereo_source),
+        "stereo_width": round(_clamp(stereo_width), 1),
+        "chorus_likelihood": round(_clamp(chorus_likelihood), 1),
+        "modulation_depth": round(_clamp(modulation_depth), 1),
+        "delay_likelihood": round(_clamp(delay_likelihood), 1),
+        "ping_pong_delay": round(_clamp(ping_pong_delay), 1),
+        "double_tracking": round(_clamp(double_tracking), 1),
+        "lr_correlation": round(float(lr_correlation), 4),
+        "side_mid_ratio": round(float(side_mid_ratio), 4),
+    }
+    
     debug_space = {
         "tail_persistence": round(tail_persistence, 4),
         "tail_decay_smoothness": round(tail_decay_smoothness, 4),
@@ -632,12 +791,13 @@ def analyze_audio(path: str) -> dict[str, Any]:
         "delay_echo": round(delay_echo, 2),
         "final_ambience": round(_clamp(ambience), 2),
     }
-
+    
     return {
-        "version": "tone-analysis-v6",
+        "version": "tone-analysis-v6-effects-v1",
         "stats": asdict(stats),
         "scores": asdict(scores),
         "eq_profile": eq_profile,
         "space": space_profile,
+        "effects": effects_profile,
         "debug_space": debug_space,
     }
