@@ -85,6 +85,28 @@ type Recommendation = {
   eq_tips: string[];
   chain: string[];
   notes: string[];
+  effects_recommendation?: {
+    stereo_width: number;
+    is_stereo_source: boolean;
+    chorus_likelihood: number;
+    delay_likelihood: number;
+    ping_pong_delay: number;
+    double_tracking: number;
+    modulation: {
+      effect: string;
+      mix: number;
+      rate: number;
+      depth: number;
+      tip: string;
+    };
+    delay: {
+      type: string;
+      mix: number;
+      time: string;
+      feedback: number;
+      tip: string;
+    };
+  };
 };
 
 type SpaceProfile = {
@@ -93,6 +115,18 @@ type SpaceProfile = {
   dry_sustain: number;
   room_wetness: number;
   delay_echo: number;
+};
+
+type EffectsProfile = {
+  is_stereo_source: boolean;
+  stereo_width: number;
+  chorus_likelihood: number;
+  modulation_depth: number;
+  delay_likelihood: number;
+  ping_pong_delay: number;
+  double_tracking: number;
+  lr_correlation?: number;
+  side_mid_ratio?: number;
 };
 
 type Result = {
@@ -104,6 +138,7 @@ type Result = {
     scores: Scores;
     eq_profile: EqProfile;
     space?: SpaceProfile;
+    effects?: EffectsProfile;
     debug_space?: Record<string, number>;
   };
   recommendation: Recommendation;
@@ -358,6 +393,9 @@ function ResultPanel({ result }: { result: Result }) {
   const recommendation = result?.recommendation || ({} as Recommendation);
   const space = result?.analysis?.space;
 
+  const effects = result?.analysis?.effects;
+  const effectsRecommendation = recommendation.effects_recommendation;  
+
   const ampExamples = Array.isArray(recommendation.amp_examples)
     ? recommendation.amp_examples
     : [];
@@ -523,6 +561,43 @@ function ResultPanel({ result }: { result: Result }) {
         </div>
       )}
 
+      {effects && (
+        <div className="mt-6 rounded-[1.5rem] bg-white/5 p-5">
+          <h4 className="font-black">Effects Analysis</h4>
+          <p className="mt-2 text-sm leading-6 text-slate-400">
+            스테레오 폭, 코러스, 딜레이, 더블트래킹 가능성을 추정한 값입니다.
+          </p>
+
+          <div className="mt-4 space-y-3">
+            <ScoreBar
+              title="Stereo Width"
+              desc={effects.is_stereo_source ? '좌우 스테레오 폭' : '모노 파일이어서 정확도가 낮음'}
+              value={effects.stereo_width}
+            />
+            <ScoreBar
+              title="Chorus Likelihood"
+              desc="코러스/모듈레이션 가능성"
+              value={effects.chorus_likelihood}
+            />
+            <ScoreBar
+              title="Delay Likelihood"
+              desc="반복 딜레이 가능성"
+              value={effects.delay_likelihood}
+            />
+            <ScoreBar
+              title="Ping-Pong Delay"
+              desc="좌우 교차 딜레이 가능성"
+              value={effects.ping_pong_delay}
+            />
+            <ScoreBar
+              title="Double Tracking"
+              desc="더블트래킹/스테레오 와이드닝 가능성"
+              value={effects.double_tracking}
+            />
+          </div>
+        </div>
+      )}
+
       <div className="mt-6 rounded-[1.5rem] bg-white/5 p-5">
         <h4 className="font-black">추천 시그널 체인</h4>
         <div className="mt-4 flex flex-wrap gap-2">
@@ -549,6 +624,52 @@ function ResultPanel({ result }: { result: Result }) {
           main={ambience.reverb}
           body={ambience.space_note || ambience.tip}
         />
+
+         {effectsRecommendation && (
+          <>
+            <InfoCard
+              title="Modulation"
+              main={effectsRecommendation.modulation.effect}
+              body={effectsRecommendation.modulation.tip}
+            />
+
+            <InfoCard
+              title="Delay"
+              main={effectsRecommendation.delay.type}
+              body={effectsRecommendation.delay.tip}
+            />
+
+            <div className="rounded-2xl bg-white/5 p-4 sm:col-span-2">
+              <p className="text-xs uppercase text-slate-400">Effects Settings</p>
+              <div className="mt-3 grid grid-cols-2 gap-3">
+                <div className="rounded-xl bg-white/5 p-3">
+                  <p className="text-xs text-slate-400">Chorus Mix</p>
+                  <p className="text-xl font-black">
+                    {Number(effectsRecommendation.modulation.mix || 0)}%
+                  </p>
+                </div>
+                <div className="rounded-xl bg-white/5 p-3">
+                  <p className="text-xs text-slate-400">Chorus Depth</p>
+                  <p className="text-xl font-black">
+                    {Number(effectsRecommendation.modulation.depth || 0).toFixed(1)}
+                  </p>
+                </div>
+                <div className="rounded-xl bg-white/5 p-3">
+                  <p className="text-xs text-slate-400">Delay Mix</p>
+                  <p className="text-xl font-black">
+                    {Number(effectsRecommendation.delay.mix || 0)}%
+                  </p>
+                </div>
+                <div className="rounded-xl bg-white/5 p-3">
+                  <p className="text-xs text-slate-400">Delay Time</p>
+                  <p className="text-lg font-black">
+                    {effectsRecommendation.delay.time}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
 
         {drive.model_examples && drive.model_examples.length > 0 && (
           <div className="rounded-2xl bg-white/5 p-4 sm:col-span-2">
