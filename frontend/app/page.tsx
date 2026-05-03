@@ -27,14 +27,23 @@ type Scores = {
   high_gain_likelihood: number;
   lead_gain_likelihood: number;
 };
-
 type EqProfile = {
-  low: number;
-  low_mid: number;
-  mid: number;
-  high_mid: number;
-  presence: number;
-  air_fizz: number;
+  sub_bass?: number;
+  bass?: number;
+  mud?: number;
+  warm_body?: number;
+  core_mid?: number;
+  upper_mid?: number;
+  presence?: number;
+  fizz?: number;
+  air?: number;
+
+  // 기존 호환용
+  low?: number;
+  low_mid?: number;
+  mid?: number;
+  high_mid?: number;
+  air_fizz?: number;
 };
 
 type Recommendation = {
@@ -125,6 +134,54 @@ const scoreLabels: Array<[keyof Scores, string, string]> = [
   ['scoop', 'Scoop', '미드가 빠진 정도'],
   ['bite', 'Bite', '물리는 어택감'],
 ];
+
+const eqLabels: Record<string, { title: string; range: string; desc: string }> = {
+    sub_bass: {
+      title: 'Sub Bass',
+      range: '40–80Hz',
+      desc: '초저역 / 기타톤에서는 거의 필요 없는 영역',
+    },
+    bass: {
+      title: 'Bass',
+      range: '80–160Hz',
+      desc: '저역 무게감 / 너무 많으면 답답할 수 있음',
+    },
+    mud: {
+      title: 'Mud',
+      range: '160–350Hz',
+      desc: '먹먹함 / 뭉침이 생기기 쉬운 대역',
+    },
+    warm_body: {
+      title: 'Warm Body',
+      range: '350–800Hz',
+      desc: '따뜻함 / 기타 몸통감',
+    },
+    core_mid: {
+      title: 'Core Mid',
+      range: '800Hz–1.6kHz',
+      desc: '중심 미드 / 기타가 앞으로 나오는 대역',
+    },
+    upper_mid: {
+      title: 'Upper Mid',
+      range: '1.6–3.5kHz',
+      desc: '상중역 / 피킹 어택과 존재감',
+    },
+    presence: {
+      title: 'Presence',
+      range: '3.5–6.5kHz',
+      desc: '선명도 / 앞으로 튀어나오는 느낌',
+    },
+    fizz: {
+      title: 'Fizz',
+      range: '6.5–10kHz',
+      desc: '지글거림 / 하이게인 고역 거칠음',
+    },
+    air: {
+      title: 'Air',
+      range: '10–14kHz',
+      desc: '공기감 / 아주 높은 고역',
+    },
+};
 
 const MAX_FILE_SIZE = 25 * 1024 * 1024;
 
@@ -410,17 +467,45 @@ function ResultPanel({ result }: { result: Result }) {
         ))}
       </div>
 
-      <div className="mt-6 rounded-[1.5rem] bg-white/5 p-5">
-        <h4 className="font-black">EQ Profile</h4>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          {Object.entries(eqProfile).map(([key, value]) => (
-            <div key={key} className="rounded-2xl bg-white/5 p-4">
-              <p className="text-xs uppercase text-slate-400">{key.replaceAll('_', ' ')}</p>
-              <p className="mt-1 text-2xl font-black">{Number(value || 0).toFixed(2)}</p>
+  <div className="mt-6 rounded-[1.5rem] bg-white/5 p-5">
+    <h4 className="font-black">EQ Profile</h4>
+    <p className="mt-2 text-sm leading-6 text-slate-400">
+      기타톤의 주파수 대역을 나눠서 본 값입니다. 숫자가 높을수록 해당 대역이 많이 감지된 것입니다.
+    </p>
+  
+    <div className="mt-4 grid gap-3">
+      {Object.entries(eqLabels).map(([key, meta]) => {
+        const value = Number(eqProfile[key as keyof EqProfile] || 0);
+  
+        return (
+          <div key={key} className="rounded-2xl bg-white/5 p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="font-bold">
+                  {meta.title}
+                  <span className="ml-2 text-xs font-normal text-indigo-200">
+                    {meta.range}
+                  </span>
+                </p>
+                <p className="mt-1 text-xs leading-5 text-slate-400">
+                  {meta.desc}
+                </p>
+              </div>
+  
+              <p className="text-xl font-black">{value.toFixed(2)}</p>
             </div>
-          ))}
-        </div>
-      </div>
+  
+            <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-800">
+              <div
+                className="meter-bg h-full rounded-full"
+                style={{ width: `${Math.max(0, Math.min(100, value * 10))}%` }}
+              />
+              </div>
+          </div>
+        );
+      })}
+    </div>
+  </div>
 
       {space && (
         <div className="mt-6 rounded-[1.5rem] bg-white/5 p-5">
