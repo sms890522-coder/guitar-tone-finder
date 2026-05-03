@@ -65,6 +65,8 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
     presence = _get_score(scores, "presence", brightness)
 
     high_gain_likelihood = _get_score(scores, "high_gain_likelihood", gain)
+    lead_gain_likelihood = _get_score(scores, "lead_gain_likelihood", high_gain_likelihood)
+    
 
 
     body = _get_score(scores, "body", warmth)
@@ -79,12 +81,12 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
         # 실제 분류용 드라이브 강도
     # gain보다 high_gain_likelihood를 우선한다.
     drive_intensity = _clamp(
-        0.10 * gain
-        + 0.46 * high_gain_likelihood
-        + 0.18 * distortion
-        + 0.12 * roughness
-        + 0.10 * compression
-        + 0.04 * sustain
+        0.08 * gain
+        + 0.34 * high_gain_likelihood
+        + 0.26 * lead_gain_likelihood
+        + 0.14 * distortion
+        + 0.10 * roughness
+        + 0.08 * compression
     )
 
     # 하이게인 강제 보정
@@ -109,10 +111,20 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
     if high_gain_likelihood >= 8.0:
         drive_intensity = max(drive_intensity, 8.2)
 
+    if lead_gain_likelihood >= 7.0 and sustain >= 6.0:
+        drive_intensity = max(drive_intensity, 7.0)
+    
+    if lead_gain_likelihood >= 7.5:
+        drive_intensity = max(drive_intensity, 7.4)
+    
+    if lead_gain_likelihood >= 8.0:
+        drive_intensity = max(drive_intensity, 8.0)
+
     # 클린 보호:
     # high_gain_likelihood, distortion, compression이 전부 낮을 때만 클린으로 허용
     is_probably_clean = (
         high_gain_likelihood < 4.2
+        and lead_gain_likelihood < 4.8
         and distortion < 4.2
         and compression < 4.8
         and roughness < 4.8
@@ -134,7 +146,15 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
     # gain보다 drive_intensity를 우선 사용한다.
     # 이유: 하이게인 톤도 녹음 볼륨이 낮으면 gain 점수가 낮게 나올 수 있음.
 
-    if drive_intensity >= 7.4 and low_tightness >= 6.0 and mid_focus >= 5.0:
+    if lead_gain_likelihood >= 7.4 and sustain >= 6.2:
+        tone_type = "Singing High-Gain Lead"
+        tone_summary = "서스테인과 미드가 살아 있는 하이게인 솔로/리드톤 성향입니다."
+    
+    elif lead_gain_likelihood >= 6.8 and mid_focus >= 5.5:
+        tone_type = "Driven Lead / Solo Tone"
+        tone_summary = "클린보다는 드라이브가 걸린 리드/솔로톤 성향입니다."
+        
+    elif drive_intensity >= 7.4 and low_tightness >= 6.0 and mid_focus >= 5.0:
         tone_type = "Tight Modern High-Gain Rhythm"
         tone_summary = "왜곡감과 타이트함이 강한 모던 하이게인 리듬톤 성향입니다."
 
@@ -266,7 +286,12 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
             amp_reason = "밸런스 좋은 중게인 록톤이라 범용 브리티시 록 앰프와 잘 맞습니다."
 
     else:
-        if low_tightness >= 7.0 and mid_focus < 5.5 and fizz >= 5.5:
+        if lead_gain_likelihood >= 7.2 and sustain >= 6.0 and mid_focus >= 5.5:
+            amp_family = "Singing Lead High-Gain"
+            amp_model = "Soldano SLO / Friedman BE Lead / Bogner Ecstasy Red 계열"
+            amp_examples = ["Soldano SLO-100", "Friedman BE Lead", "Bogner Ecstasy Red"]
+            amp_reason = "서스테인과 미드가 살아 있어 단음 솔로가 길게 이어지는 리드 하이게인 계열과 잘 맞습니다."
+        elif low_tightness >= 7.0 and mid_focus < 5.5 and fizz >= 5.5:
             amp_family = "Mesa Rectifier Modern High-Gain"
             amp_model = "Mesa Dual Rectifier / Modern Recto 계열"
             amp_examples = ["Mesa Dual Rectifier", "Mesa Triple Rectifier", "Modern Recto"]
