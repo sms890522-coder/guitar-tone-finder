@@ -25,6 +25,7 @@ type Scores = {
   scoop: number;
   bite: number;
   high_gain_likelihood: number;
+  lead_gain_likelihood: number;
 };
 
 type EqProfile = {
@@ -110,6 +111,7 @@ const scoreLabels: Array<[keyof Scores, string, string]> = [
   ['ambience', 'Ambience', '공간감 추정'],
   ['distortion', 'Distortion', '왜곡/새츄레이션'],
   ['high_gain_likelihood', 'High Gain Likelihood', '하이게인 가능성'],
+  ['lead_gain_likelihood', 'Lead Gain Likelihood', '리드 하이게인 가능성'],
   ['pick_attack', 'Pick Attack', '피킹 어택'],
   ['sustain', 'Sustain', '서스테인'],
   ['fizz', 'Fizz', '고역 지글거림'],
