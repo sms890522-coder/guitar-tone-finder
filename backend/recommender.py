@@ -69,14 +69,7 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
     high_gain_likelihood = _get_score(scores, "high_gain_likelihood", gain)
     lead_gain_likelihood = _get_score(scores, "lead_gain_likelihood", high_gain_likelihood)
     
-    stereo_width = _get_score(effects, "stereo_width", 0.0)
-    chorus_likelihood = _get_score(effects, "chorus_likelihood", 0.0)
-    modulation_depth = _get_score(effects, "modulation_depth", 0.0)
-    delay_likelihood = _get_score(effects, "delay_likelihood", delay_echo)
-    ping_pong_delay = _get_score(effects, "ping_pong_delay", 0.0)
-    double_tracking = _get_score(effects, "double_tracking", 0.0)
-    is_stereo_source = bool(effects.get("is_stereo_source", False))
-
+    
     body = _get_score(scores, "body", warmth)
     mud = _get_score(scores, "mud", 0.0)
     core_mid = _get_score(scores, "core_mid", mid_focus)
@@ -147,6 +140,14 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
     dry_sustain = _get_score(space, "dry_sustain", sustain)
     room_wetness = _get_score(space, "room_wetness", ambience)
     delay_echo = _get_score(space, "delay_echo", 0.0)
+
+    stereo_width = _get_score(effects, "stereo_width", 0.0)
+    chorus_likelihood = _get_score(effects, "chorus_likelihood", 0.0)
+    modulation_depth = _get_score(effects, "modulation_depth", 0.0)
+    delay_likelihood = _get_score(effects, "delay_likelihood", delay_echo)
+    ping_pong_delay = _get_score(effects, "ping_pong_delay", 0.0)
+    double_tracking = _get_score(effects, "double_tracking", 0.0)
+    is_stereo_source = bool(effects.get("is_stereo_source", False))
 
     # -----------------------------
     # 1. 톤 타입 분류
@@ -759,9 +760,11 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
     if effects_recommendation["modulation"]["mix"] > 0:
         chain.append(effects_recommendation["modulation"]["effect"])
 
-    if ambience_recommendation["delay_mix"] > 0:
+    if effects_recommendation["delay"]["mix"] > 0:
+        chain.append(effects_recommendation["delay"]["type"])
+    elif ambience_recommendation["delay_mix"] > 0:
         chain.append(ambience_recommendation["delay"])
-
+        
     # -----------------------------
     # 9. 신뢰도/주의 문구
     # -----------------------------
@@ -843,5 +846,14 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
             "roughness": round(roughness, 2),
             "sustain": round(sustain, 2),
             "is_probably_clean": is_probably_clean,
+        },
+        "debug_effects": {
+            "stereo_width": round(stereo_width, 2),
+            "chorus_likelihood": round(chorus_likelihood, 2),
+            "modulation_depth": round(modulation_depth, 2),
+            "delay_likelihood": round(delay_likelihood, 2),
+            "ping_pong_delay": round(ping_pong_delay, 2),
+            "double_tracking": round(double_tracking, 2),
+            "is_stereo_source": is_stereo_source,
         },
     }
