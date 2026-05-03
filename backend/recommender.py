@@ -49,6 +49,8 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
     eq = analysis.get("eq_profile", {})
     space = analysis.get("space", {})
 
+    effects = analysis.get("effects", {})
+
     gain = _get_score(scores, "gain")
     brightness = _get_score(scores, "brightness")
     warmth = _get_score(scores, "warmth")
@@ -67,7 +69,13 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
     high_gain_likelihood = _get_score(scores, "high_gain_likelihood", gain)
     lead_gain_likelihood = _get_score(scores, "lead_gain_likelihood", high_gain_likelihood)
     
-
+    stereo_width = _get_score(effects, "stereo_width", 0.0)
+    chorus_likelihood = _get_score(effects, "chorus_likelihood", 0.0)
+    modulation_depth = _get_score(effects, "modulation_depth", 0.0)
+    delay_likelihood = _get_score(effects, "delay_likelihood", delay_echo)
+    ping_pong_delay = _get_score(effects, "ping_pong_delay", 0.0)
+    double_tracking = _get_score(effects, "double_tracking", 0.0)
+    is_stereo_source = bool(effects.get("is_stereo_source", False))
 
     body = _get_score(scores, "body", warmth)
     mud = _get_score(scores, "mud", 0.0)
@@ -78,7 +86,7 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
     scoop = _get_score(scores, "scoop", 0.0)
     bite = _get_score(scores, "bite", pick_attack)
 
-        # 실제 분류용 드라이브 강도
+    # 실제 분류용 드라이브 강도
     # gain보다 high_gain_likelihood를 우선한다.
     drive_intensity = _clamp(
         0.08 * gain
@@ -656,7 +664,87 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
         "room_wetness": room_wetness,
         "delay_echo": delay_echo,
     }
+    
+    # -----------------------------
+    # 7-1. 모듈레이션 / 딜레이 이펙트 추천
+    # -----------------------------
+    if chorus_likelihood >= 7.0:
+        modulation_recommendation = {
+            "effect": "Chorus",
+            "mix": 22,
+            "rate": 1.2,
+            "depth": 6.5,
+            "tip": "좌우 폭과 미세한 흔들림이 강하게 감지됩니다. Chorus 계열 모듈레이션 가능성이 높습니다.",
+        }
+    elif chorus_likelihood >= 5.4:
+        modulation_recommendation = {
+            "effect": "Light Chorus / Dimension",
+            "mix": 14,
+            "rate": 0.8,
+            "depth": 4.5,
+            "tip": "약한 코러스 또는 Dimension 계열의 스테레오 확장 가능성이 있습니다.",
+        }
+    elif double_tracking >= 6.0:
+        modulation_recommendation = {
+            "effect": "Double Tracking / Stereo Widener",
+            "mix": 18,
+            "rate": 0.0,
+            "depth": 3.0,
+            "tip": "코러스보다는 좌우 더블트래킹 또는 스테레오 와이드닝에 가까운 성향입니다.",
+        }
+    else:
+        modulation_recommendation = {
+            "effect": "Off 또는 매우 약하게",
+            "mix": 0,
+            "rate": 0.0,
+            "depth": 0.0,
+            "tip": "코러스/모듈레이션 성향은 강하게 감지되지 않습니다.",
+        }
 
+    if ping_pong_delay >= 6.5:
+        delay_recommendation = {
+            "type": "Ping-Pong Delay",
+            "mix": 18,
+            "time": "Dotted 8th 또는 Quarter",
+            "feedback": 28,
+            "tip": "좌우 폭과 반복 패턴이 감지되어 핑퐁 딜레이 가능성이 있습니다.",
+        }
+    elif delay_likelihood >= 6.5:
+        delay_recommendation = {
+            "type": "Stereo Delay",
+            "mix": 16,
+            "time": "Quarter 또는 Dotted 8th",
+            "feedback": 24,
+            "tip": "반복성 있는 에너지 패턴이 감지되어 스테레오 딜레이 가능성이 있습니다.",
+        }
+    elif delay_likelihood >= 4.8:
+        delay_recommendation = {
+            "type": "Subtle Delay",
+            "mix": 8,
+            "time": "Slapback 또는 짧은 Quarter",
+            "feedback": 15,
+            "tip": "약한 딜레이 또는 반복감이 감지됩니다.",
+        }
+    else:
+        delay_recommendation = {
+            "type": "Off 또는 매우 약하게",
+            "mix": 0,
+            "time": "Off",
+            "feedback": 0,
+            "tip": "딜레이 성향은 강하게 감지되지 않습니다.",
+        }
+
+    effects_recommendation = {
+        "stereo_width": stereo_width,
+        "is_stereo_source": is_stereo_source,
+        "chorus_likelihood": chorus_likelihood,
+        "delay_likelihood": delay_likelihood,
+        "ping_pong_delay": ping_pong_delay,
+        "double_tracking": double_tracking,
+        "modulation": modulation_recommendation,
+        "delay": delay_recommendation,
+    }
+    
     # -----------------------------
     # 8. 최종 체인
     # -----------------------------
@@ -667,6 +755,9 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
         cabinet["cab"],
         ambience_recommendation["reverb"],
     ]
+
+    if effects_recommendation["modulation"]["mix"] > 0:
+        chain.append(effects_recommendation["modulation"]["effect"])
 
     if ambience_recommendation["delay_mix"] > 0:
         chain.append(ambience_recommendation["delay"])
@@ -734,6 +825,7 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
         "amp_settings": amp_settings,
         "cabinet": cabinet,
         "ambience": ambience_recommendation,
+        "effects_recommendation": effects_recommendation,
         "eq_tips": eq_tips,
         "chain": chain,
         "notes": [
