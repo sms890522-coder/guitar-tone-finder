@@ -225,6 +225,7 @@ export default function Home() {
   const [result, setResult] = useState<Result | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [progress, setProgress] = useState(0);
 
   useEffect(() => {
     const API_BASE_URL = 'https://guitar-tone-finder-api.onrender.com';
@@ -253,7 +254,19 @@ export default function Home() {
     setLoading(true);
     setError('');
     setResult(null);
-
+    setProgress(0);
+    
+    let progressTimer: ReturnType<typeof setInterval> | null = null;
+    
+    progressTimer = setInterval(() => {
+      setProgress((prev) => {
+        if (prev < 60) return prev + 6;
+        if (prev < 82) return prev + 3;
+        if (prev < 94) return prev + 1;
+        return prev;
+      });
+    }, 450);
+    
     const formData = new FormData();
     formData.append('file', file);
 
@@ -273,11 +286,19 @@ export default function Home() {
         throw new Error(data.detail || '분석에 실패했습니다.');
       }
 
+      setProgress(100);
       setResult(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : '알 수 없는 오류가 발생했습니다.');
     } finally {
-      setLoading(false);
+      if (progressTimer) {
+        clearInterval(progressTimer);
+      }
+    
+      setTimeout(() => {
+        setLoading(false);
+        setProgress(0);
+      }, 500);
     }
   }
 
@@ -353,8 +374,33 @@ export default function Home() {
               disabled={loading || !file}
               className="mt-6 w-full rounded-2xl bg-white px-6 py-4 font-black text-slate-950 transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-40"
             >
-              {loading ? '분석 중...' : '톤 분석 시작'}
+            {loading ? `분석 중... ${progress}%` : '톤 분석 시작'}  
             </button>
+            
+            {loading && (
+              <div className="mt-4 rounded-2xl bg-white/5 p-4">
+                <div className="mb-2 flex items-center justify-between text-xs text-slate-300">
+                  <span>
+                    {progress < 30
+                      ? '오디오 업로드 중...'
+                      : progress < 70
+                        ? '톤 특성 분석 중...'
+                        : progress < 95
+                          ? '앰프·이펙터 추천 생성 중...'
+                          : '결과 정리 중...'}
+                  </span>
+                  <span className="font-bold">{progress}%</span>
+                </div>
+            
+                <div className="h-3 overflow-hidden rounded-full bg-slate-800">
+                  <div
+                    className="meter-bg h-full rounded-full transition-all duration-500"
+                    style={{ width: `${progress}%` }}
+                  />
+                </div>
+              </div>
+            )}
+            
             <p className="mt-3 text-xs leading-5 text-slate-400">
               무료 서버 특성상 첫 분석은 서버가 깨어나는 데 시간이 걸릴 수 있습니다.
             </p>
