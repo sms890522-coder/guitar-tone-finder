@@ -744,6 +744,7 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
         "debug_drive": {
             "drive_intensity": round(drive_intensity, 2),
             "high_gain_likelihood": round(high_gain_likelihood, 2),
+            "lead_gain_likelihood": round(lead_gain_likelihood, 2),
             "gain": round(gain, 2),
             "distortion": round(distortion, 2),
             "compression": round(compression, 2),
