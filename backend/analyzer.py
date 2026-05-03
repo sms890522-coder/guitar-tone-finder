@@ -370,6 +370,64 @@ def analyze_audio(path: str) -> dict[str, Any]:
 
     high_gain_likelihood = _clamp(high_gain_likelihood)
 
+    # -----------------------------
+    # Lead Gain Likelihood
+    # -----------------------------
+    # 솔로/리드톤은 리듬톤보다 저역 타이트함, 팜뮤트, roughness가 약하게 잡힐 수 있다.
+    # 대신 sustain, compression, upper_mid/presence, smooth distortion을 더 중요하게 본다.
+
+    lead_band_density = _score(
+        upper_mid_energy + presence_energy + core_mid_energy,
+        0.12,
+        0.42,
+    )
+
+    singing_mid_score = (
+        0.40 * core_mid
+        + 0.35 * upper_mid
+        + 0.25 * presence
+    )
+
+    smooth_lead_saturation = (
+        0.30 * sustain
+        + 0.25 * compression
+        + 0.20 * distortion
+        + 0.15 * singing_mid_score
+        + 0.10 * lead_band_density
+    )
+
+    # 리드톤은 attack이 너무 강하지 않아도, sustain과 mid가 있으면 하이게인일 수 있음
+    lead_gain_likelihood = (
+        0.45 * smooth_lead_saturation
+        + 0.25 * high_gain_likelihood
+        + 0.20 * sustain
+        + 0.10 * compression
+    )
+
+    # 솔로 하이게인 보정:
+    # sustain + compression + 미드/프레즌스가 높으면 리드 하이게인 가능성
+    if sustain >= 6.2 and compression >= 5.2 and singing_mid_score >= 5.8:
+        lead_gain_likelihood = max(lead_gain_likelihood, 7.0)
+
+    if sustain >= 7.0 and distortion >= 4.8 and presence >= 5.0:
+        lead_gain_likelihood = max(lead_gain_likelihood, 7.2)
+
+    if core_mid >= 6.2 and upper_mid >= 5.2 and sustain >= 6.0:
+        lead_gain_likelihood = max(lead_gain_likelihood, 6.8)
+
+    # 딜레이/리버브가 있어도 리드톤은 하이게인일 수 있음
+    # ambience가 높다고 gain 판단을 낮추지 않는다.
+    if sustain >= 6.5 and lead_band_density >= 5.5 and compression >= 5.0:
+        lead_gain_likelihood = max(lead_gain_likelihood, 6.9)
+
+    # 클린 솔로 보호:
+    # sustain은 길지만 distortion/compression이 낮으면 클린 리드일 수 있음
+    if distortion < 3.8 and compression < 4.2 and high_gain_likelihood < 4.5:
+        lead_gain_likelihood = min(lead_gain_likelihood, 4.8)
+
+    lead_gain_likelihood = _clamp(lead_gain_likelihood)
+    
+
     pick_attack = bite
 
     # -----------------------------
@@ -529,6 +587,7 @@ def analyze_audio(path: str) -> dict[str, Any]:
         scoop=round(_clamp(scoop), 1),
         bite=round(_clamp(bite), 1),
         high_gain_likelihood=round(_clamp(high_gain_likelihood), 1),
+        lead_gain_likelihood=round(_clamp(lead_gain_likelihood), 1),
     )
 
     eq_profile = {
