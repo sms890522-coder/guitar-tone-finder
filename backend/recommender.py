@@ -52,6 +52,8 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
     effects = analysis.get("effects", {})
 
     debug_space = analysis.get("debug_space", {})
+    segment_profile = analysis.get("segment_profile", {})
+    stats = analysis.get("stats", {})
 
     gain = _get_score(scores, "gain")
     brightness = _get_score(scores, "brightness")
@@ -247,71 +249,99 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
     double_tracking = _get_score(effects, "double_tracking", 0.0)
     is_stereo_source = bool(effects.get("is_stereo_source", False))
 
+    representative_energy = _get_score(segment_profile, "representative_energy", 0.0)
+    representative_mid_density = _get_score(segment_profile, "representative_mid_density", 0.0)
+    representative_onset_density = _get_score(segment_profile, "representative_onset_density", 0.0)
+    mix_complexity = _get_score(segment_profile, "mix_complexity", 0.0)
+    low_chug_likelihood = _get_score(segment_profile, "low_chug_likelihood", 0.0)
+    single_note_lead_likelihood = _get_score(segment_profile, "single_note_lead_likelihood", 0.0)
+    chord_strum_likelihood = _get_score(segment_profile, "chord_strum_likelihood", 0.0)
+    
+    analysis_gain = _get_score(stats, "analysis_gain", 1.0)
+
+
+    # -----------------------------
+    # 0. Playing Role 1차 분류
+    # -----------------------------
+    if is_probably_clean and drive_intensity < 3.5:
+        playing_role = "clean"
+
+    elif (
+        lead_gain_likelihood >= 6.8
+        or fat_lead_likelihood >= 7.0
+        or single_note_lead_likelihood >= 7.0
+    ) and sustain >= 5.5:
+        playing_role = "high_gain_lead"
+
+    elif (
+        rectifier_likelihood >= 6.2
+        or high_gain_likelihood >= 6.5
+        or low_chug_likelihood >= 6.8
+    ) and drive_intensity >= 5.5:
+        playing_role = "high_gain_rhythm"
+
+    elif drive_intensity >= 4.0:
+        playing_role = "crunch_drive"
+
+    elif ambience >= 6.5 or delay_likelihood >= 6.0 or chorus_likelihood >= 6.0:
+        playing_role = "effects_heavy"
+
+    else:
+        playing_role = "balanced_low_gain"    
+
+    
     # -----------------------------
     # 1. 톤 타입 분류
     # -----------------------------
-    # gain보다 drive_intensity를 우선 사용한다.
-    # 이유: 하이게인 톤도 녹음 볼륨이 낮으면 gain 점수가 낮게 나올 수 있음.
-    if lead_gain_likelihood >= 7.4 and sustain >= 6.2:
-        tone_type = "Singing High-Gain Lead"
-        tone_summary = "서스테인과 미드가 살아 있는 하이게인 솔로/리드톤 성향입니다."
-
-    elif fat_lead_likelihood >= 7.0 and drive_intensity >= 5.0:
-        tone_type = "Fat Singing Lead"
-        tone_summary = "두꺼운 저중역과 서스테인이 살아 있는 리드/솔로톤 성향입니다."
-
-    elif lead_gain_likelihood >= 6.8 and mid_focus >= 5.5:
-        tone_type = "Driven Lead / Solo Tone"
-        tone_summary = "클린보다는 드라이브가 걸린 리드/솔로톤 성향입니다."
+    if playing_role == "high_gain_lead":
+        if fat_lead_likelihood >= 7.0:
+            tone_type = "Fat Singing Lead"
+            tone_summary = "두꺼운 저중역과 서스테인이 살아 있는 리드/솔로톤 성향입니다."
+        else:
+            tone_type = "Singing High-Gain Lead"
+            tone_summary = "서스테인과 미드가 살아 있는 하이게인 솔로/리드톤 성향입니다."
 
     elif rectifier_likelihood >= 6.2:
         tone_type = "Scooped Rectifier High-Gain"
         tone_summary = "미드가 상대적으로 빠지고 저역/고역이 강조된 Mesa Rectifier 계열 하이게인 성향입니다."
 
-    elif drive_intensity >= 7.4 and low_tightness >= 6.0 and mid_focus >= 5.0:
-        tone_type = "Tight Modern High-Gain Rhythm"
-        tone_summary = "왜곡감과 타이트함이 강한 모던 하이게인 리듬톤 성향입니다."
+    elif playing_role == "high_gain_rhythm":
+        if low_tightness >= 6.0:
+            tone_type = "Tight Modern High-Gain Rhythm"
+            tone_summary = "왜곡감과 타이트함이 강한 모던 하이게인 리듬톤 성향입니다."
+        else:
+            tone_type = "Modern High-Gain Rhythm"
+            tone_summary = "드라이브가 강하고 리듬 연주에 어울리는 하이게인 성향입니다."
 
-    elif drive_intensity >= 7.2 and sustain >= 6.0:
-        tone_type = "Singing High-Gain Lead"
-        tone_summary = "왜곡감과 서스테인이 강한 하이게인 리드톤 성향입니다."
+    elif playing_role == "crunch_drive":
+        if mid_focus >= 6.0:
+            tone_type = "British Crunch / Classic Rock"
+            tone_summary = "중음이 앞으로 나온 브리티시 크런치 계열 성향입니다."
+        else:
+            tone_type = "Modern Drive"
+            tone_summary = "중음이 덜 강조되고 드라이브가 있는 모던 드라이브 성향입니다."
 
-    elif drive_intensity >= 6.4 and scoop >= 6.0:
-        tone_type = "Scooped Modern High-Gain"
-        tone_summary = "미드가 살짝 빠지고 저역/고역이 강조된 모던 하이게인 성향입니다."
+    elif playing_role == "effects_heavy":
+        tone_type = "Effects-Heavy Guitar Tone"
+        tone_summary = "공간계나 모듈레이션 이펙트가 톤의 중요한 요소로 감지됩니다."
 
-    elif drive_intensity >= 6.0 and mid_focus >= 6.0:
-        tone_type = "British High-Gain / Hard Rock"
-        tone_summary = "중음이 살아 있고 왜곡감이 강한 브리티시 하드록/하이게인 성향입니다."
-
-    elif drive_intensity >= 5.0 and mid_focus >= 6.0:
-        tone_type = "British Crunch / Classic Rock"
-        tone_summary = "중음이 앞으로 나온 브리티시 크런치 계열 성향입니다."
-
-    elif drive_intensity >= 5.0 and mid_focus < 5.5:
-        tone_type = "Modern Drive"
-        tone_summary = "중음이 덜 강조되고 드라이브가 있는 모던 드라이브 성향입니다."
-
-    elif drive_intensity >= 3.5:
-        tone_type = "Edge of Breakup / Light Drive"
-        tone_summary = "클린보다는 살짝 깨지는 엣지 오브 브레이크업 또는 라이트 드라이브 성향입니다."
-
-    elif is_probably_clean and brightness >= 6.0:
-        tone_type = "Bright Clean"
-        tone_summary = "게인은 낮고 밝은 클린톤 성향입니다."
-
-    elif is_probably_clean and warmth >= 6.0:
-        tone_type = "Warm Clean"
-        tone_summary = "따뜻하고 부드러운 클린톤 성향입니다."
-
-    elif is_probably_clean:
-        tone_type = "Balanced Clean / Low Gain"
-        tone_summary = "드라이브가 강하지 않은 밸런스형 클린 또는 로우게인 톤입니다."
+    elif playing_role == "clean":
+        if brightness >= 6.0:
+            tone_type = "Bright Clean"
+            tone_summary = "게인은 낮고 밝은 클린톤 성향입니다."
+        elif warmth >= 6.0:
+            tone_type = "Warm Clean"
+            tone_summary = "따뜻하고 부드러운 클린톤 성향입니다."
+        else:
+            tone_type = "Balanced Clean"
+            tone_summary = "드라이브가 강하지 않은 밸런스형 클린톤 성향입니다."
 
     else:
-        tone_type = "Driven Guitar Tone"
-        tone_summary = "클린보다는 드라이브나 왜곡 성향이 감지되는 기타톤입니다."
+        tone_type = "Balanced Guitar Tone"
+        tone_summary = "특정 성향이 과하게 치우치지 않은 밸런스형 기타톤입니다."
 
+
+    
     # -----------------------------
     # 2. 앰프 계열 추천 - 세분화 v2
     # -----------------------------
@@ -445,6 +475,84 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
             amp_examples = ["Friedman BE-100", "Marshall JCM800 Hot Rod", "Soldano SLO"]
             amp_reason = "높은 게인과 미드 중심 성향이 핫로드 브리티시 하이게인 계열과 잘 맞습니다."
 
+
+    # -----------------------------
+    # 2-1. 대안 앰프 후보 Top 3
+    # -----------------------------
+    amp_candidates_raw = [
+        {
+            "name": "Mesa Dual Rectifier / Modern Recto 계열",
+            "score": rectifier_likelihood,
+            "reason": "미드가 빠지고 저역/고역이 강조된 scooped 하이게인 성향",
+        },
+        {
+            "name": "Soldano SLO / Singing Lead 계열",
+            "score": _clamp(0.60 * lead_gain_likelihood + 0.25 * sustain + 0.15 * mid_focus),
+            "reason": "서스테인과 미드가 살아 있는 리드 하이게인 성향",
+        },
+        {
+            "name": "5150 / EVH / 6505 계열",
+            "score": _clamp(0.45 * high_gain_likelihood + 0.25 * low_tightness + 0.15 * compression + 0.15 * bite),
+            "reason": "타이트한 저역과 강한 게인, 공격적인 리듬톤 성향",
+        },
+        {
+            "name": "Friedman BE / Hot-Rodded Marshall 계열",
+            "score": _clamp(0.35 * drive_intensity + 0.25 * mid_focus + 0.20 * body + 0.20 * gain),
+            "reason": "핫로드 브리티시 계열의 미드 중심 록/하이게인 성향",
+        },
+        {
+            "name": "Marshall Plexi / JCM800 계열",
+            "score": _clamp(0.35 * mid_focus + 0.25 * drive_intensity + 0.20 * brightness + 0.20 * bite),
+            "reason": "중음이 앞으로 나오는 클래식 브리티시 크런치/록 성향",
+        },
+        {
+            "name": "Orange Rockerverb / Thick Rock 계열",
+            "score": _clamp(0.35 * warmth + 0.25 * body + 0.25 * drive_intensity + 0.15 * mud),
+            "reason": "두꺼운 저중역과 굵은 록톤 성향",
+        },
+        {
+            "name": "Fender Twin / Deluxe Reverb 계열",
+            "score": _clamp((10 - drive_intensity) * 0.45 + brightness * 0.35 + (10 - distortion) * 0.20),
+            "reason": "밝고 깨끗한 아메리칸 클린 성향",
+        },
+        {
+            "name": "Vox AC30 / Matchless 계열",
+            "score": _clamp((10 - drive_intensity) * 0.25 + brightness * 0.35 + mid_focus * 0.25 + upper_mid * 0.15),
+            "reason": "차임감과 상중역이 살아 있는 클린/브레이크업 성향",
+        },
+    ]
+
+    # 현재 선택된 amp_family가 후보에 없으면 추가
+    amp_candidates_raw.append(
+        {
+            "name": amp_model,
+            "score": 8.0,
+            "reason": amp_reason,
+        }
+    )
+
+    deduped_candidates: dict[str, dict[str, Any]] = {}
+    for candidate in amp_candidates_raw:
+        name = candidate["name"]
+        if name not in deduped_candidates or candidate["score"] > deduped_candidates[name]["score"]:
+            deduped_candidates[name] = candidate
+
+    amp_candidates = sorted(
+        deduped_candidates.values(),
+        key=lambda item: item["score"],
+        reverse=True,
+    )[:3]
+
+    amp_candidates = [
+        {
+            "name": item["name"],
+            "score": int(round(_clamp(item["score"]) * 10)),
+            "reason": item["reason"],
+        }
+        for item in amp_candidates
+    ]
+
+    
     # -----------------------------
     # 3. 드라이브/부스터 추천 - 세분화 v2
     # -----------------------------
@@ -888,22 +996,58 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
     elif ambience_recommendation["delay_mix"] > 0:
         chain.append(ambience_recommendation["delay"])
         
+
     # -----------------------------
     # 9. 신뢰도/주의 문구
     # -----------------------------
-    confidence = 70
+    confidence = 68
 
-    if gain >= 8.5 or fizz >= 8.5:
+    top_score = amp_candidates[0]["score"] if amp_candidates else 50
+    second_score = amp_candidates[1]["score"] if len(amp_candidates) > 1 else 0
+    candidate_gap = top_score - second_score
+
+    # 후보 간 격차가 크면 신뢰도 상승
+    if candidate_gap >= 18:
+        confidence += 8
+    elif candidate_gap >= 10:
+        confidence += 4
+    elif candidate_gap <= 5:
         confidence -= 8
-    if ambience >= 8.0:
-        confidence -= 5
-    if sustain <= 2.5:
-        confidence -= 5
-    if abs(brightness - warmth) < 1.0 and gain < 4.0:
+
+    # role과 결과가 일관되면 상승
+    if playing_role == "high_gain_rhythm" and high_gain_likelihood >= 6.0:
+        confidence += 5
+    if playing_role == "high_gain_lead" and lead_gain_likelihood >= 6.5:
+        confidence += 5
+    if playing_role == "clean" and is_probably_clean:
+        confidence += 5
+    if rectifier_likelihood >= 6.2 and recto_shape_score >= 7.0:
         confidence += 5
 
-    confidence = int(_clamp(confidence, 45, 88))
+    # 충돌하면 하락
+    if drive_intensity >= 6.5 and high_gain_likelihood < 4.5:
+        confidence -= 8
+    if playing_role == "clean" and distortion >= 5.5:
+        confidence -= 8
+    if rectifier_likelihood >= 6.2 and mid_focus >= 7.5:
+        confidence -= 5
 
+    # 분석 환경에 따른 하락
+    if mix_complexity >= 7.0:
+        confidence -= 10
+    elif mix_complexity >= 5.8:
+        confidence -= 5
+
+    if analysis_gain >= 6.0:
+        confidence -= 4
+
+    if not is_stereo_source and (chorus_likelihood >= 5.0 or ping_pong_delay >= 5.0):
+        confidence -= 5
+
+    confidence = int(_clamp(confidence, 42, 90))
+
+
+    
     tone_traits = []
 
     if body >= 7.0 and mud < 5.5:
@@ -947,10 +1091,40 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
             "톤은 두껍지만 서스테인이 길지 않아 리드톤보다는 두꺼운 리듬톤일 가능성이 있습니다."
         )
 
+
+    playing_hints: list[str] = []
+
+    if low_chug_likelihood >= 7.0:
+        playing_hints.append("팜뮤트/척킹 리프처럼 저역이 짧고 강하게 눌리는 연주 가능성이 있습니다.")
+    elif low_chug_likelihood >= 5.5:
+        playing_hints.append("저역 리듬감이나 팜뮤트 성향이 약하게 감지됩니다.")
+
+    if single_note_lead_likelihood >= 7.0:
+        playing_hints.append("단음 리드 또는 솔로처럼 음이 이어지는 연주 가능성이 높습니다.")
+    elif single_note_lead_likelihood >= 5.5:
+        playing_hints.append("단음 리드 성향이 일부 감지됩니다.")
+
+    if chord_strum_likelihood >= 7.0:
+        playing_hints.append("코드 스트럼 또는 넓게 긁는 연주 성향이 감지됩니다.")
+    elif chord_strum_likelihood >= 5.5:
+        playing_hints.append("코드성 연주나 스트로크 성향이 일부 감지됩니다.")
+
+    if playing_role == "high_gain_rhythm":
+        playing_hints.append("전체적으로 리드보다 배킹/리듬톤에 가까운 구조로 판단됩니다.")
+    elif playing_role == "high_gain_lead":
+        playing_hints.append("전체적으로 배킹보다 리드/솔로톤에 가까운 구조로 판단됩니다.")
+
+    if mix_complexity >= 7.0:
+        playing_hints.append("다른 악기나 믹스 성분이 많이 섞여 있을 가능성이 있어 톤 추정 정확도가 낮아질 수 있습니다.")
+    
+
     return {
         "tone_type": tone_type,
         "tone_summary": tone_summary,
         "tone_traits": tone_traits,
+        "playing_role": playing_role,
+        "playing_hints": playing_hints,
+        "amp_candidates": amp_candidates,
         "confidence": confidence,
         "amp_family": amp_family,
         "amp_model": amp_model,
@@ -987,6 +1161,12 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
             "is_probably_clean": is_probably_clean,
             "fatness": round(fatness, 2),
             "fat_lead_likelihood": round(fat_lead_likelihood, 2),
+            "playing_role": playing_role,
+            "mix_complexity": round(mix_complexity, 2),
+            "low_chug_likelihood": round(low_chug_likelihood, 2),
+            "single_note_lead_likelihood": round(single_note_lead_likelihood, 2),
+            "chord_strum_likelihood": round(chord_strum_likelihood, 2),
+            "candidate_gap": candidate_gap,
         },
         "debug_effects": {
             "stereo_width": round(stereo_width, 2),
