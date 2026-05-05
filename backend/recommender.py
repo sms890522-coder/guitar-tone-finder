@@ -79,6 +79,12 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
     scoop = _get_score(scores, "scoop", 0.0)
     bite = _get_score(scores, "bite", pick_attack)
 
+    eq_bass = _get_score(eq, "bass", _get_score(eq, "low", 0.0))
+    eq_sub_bass = _get_score(eq, "sub_bass", 0.0)
+    eq_mud = _get_score(eq, "mud", 0.0)
+    eq_presence = _get_score(eq, "presence", 0.0)
+    eq_fizz = _get_score(eq, "fizz", _get_score(eq, "air_fizz", 0.0))
+
     # 실제 분류용 드라이브 강도
     # gain보다 high_gain_likelihood를 우선한다.
     drive_intensity = _clamp(
@@ -121,11 +127,47 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
     if lead_gain_likelihood >= 8.0:
         drive_intensity = max(drive_intensity, 8.0)
 
+
+    # -----------------------------
+    # Rectifier / Scooped High-Gain Likelihood
+    # -----------------------------
+    # Mesa Dual Rectifier 계열은 미드가 낮고, 저역/고역이 강해서
+    # 일반 mid_focus 기반 하이게인 로직에서 클린으로 오판될 수 있다.
+    rectifier_likelihood = _clamp(
+        0.26 * scoop
+        + 0.18 * fizz
+        + 0.16 * presence
+        + 0.16 * high_gain_likelihood
+        + 0.10 * compression
+        + 0.08 * _clamp(eq_bass * 2.0)
+        + 0.06 * _clamp(eq_fizz * 2.0)
+    )
+
+    # Rectifier 보정 조건:
+    # 미드가 빠지고, fizz/presence가 있으며, 하이게인 가능성이 조금이라도 있으면
+    # clean으로 보내지 않는다.
+    if scoop >= 6.0 and (fizz >= 5.0 or presence >= 5.0) and high_gain_likelihood >= 4.8:
+        rectifier_likelihood = max(rectifier_likelihood, 7.0)
+
+    if scoop >= 7.0 and compression >= 5.0 and (eq_bass >= 0.8 or eq_fizz >= 0.4):
+        rectifier_likelihood = max(rectifier_likelihood, 7.2)
+
+    if mid_focus <= 5.5 and scoop >= 6.0 and drive_intensity >= 5.0:
+        rectifier_likelihood = max(rectifier_likelihood, 6.8)
+
+    # Rectifier 계열로 보이면 drive_intensity를 강제로 하이게인 쪽으로 올림
+    if rectifier_likelihood >= 7.0:
+        drive_intensity = max(drive_intensity, 7.2)
+
+    if rectifier_likelihood >= 8.0:
+        drive_intensity = max(drive_intensity, 7.8)
+
     # 클린 보호:
     # high_gain_likelihood, distortion, compression이 전부 낮을 때만 클린으로 허용
     is_probably_clean = (
         high_gain_likelihood < 4.2
         and lead_gain_likelihood < 4.8
+        and rectifier_likelihood < 5.8
         and distortion < 4.2
         and compression < 4.8
         and roughness < 4.8
@@ -154,15 +196,18 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
     # -----------------------------
     # gain보다 drive_intensity를 우선 사용한다.
     # 이유: 하이게인 톤도 녹음 볼륨이 낮으면 gain 점수가 낮게 나올 수 있음.
-
     if lead_gain_likelihood >= 7.4 and sustain >= 6.2:
         tone_type = "Singing High-Gain Lead"
         tone_summary = "서스테인과 미드가 살아 있는 하이게인 솔로/리드톤 성향입니다."
-    
+
     elif lead_gain_likelihood >= 6.8 and mid_focus >= 5.5:
         tone_type = "Driven Lead / Solo Tone"
         tone_summary = "클린보다는 드라이브가 걸린 리드/솔로톤 성향입니다."
-        
+
+    elif rectifier_likelihood >= 7.0:
+        tone_type = "Scooped Rectifier High-Gain"
+        tone_summary = "미드가 빠지고 저역/고역이 강조된 Mesa Rectifier 계열 하이게인 성향입니다."
+
     elif drive_intensity >= 7.4 and low_tightness >= 6.0 and mid_focus >= 5.0:
         tone_type = "Tight Modern High-Gain Rhythm"
         tone_summary = "왜곡감과 타이트함이 강한 모던 하이게인 리듬톤 성향입니다."
@@ -293,9 +338,13 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
             amp_model = "Marshall DSL / Friedman / Bogner 계열"
             amp_examples = ["Marshall DSL", "Friedman Runt", "Bogner Shiva"]
             amp_reason = "밸런스 좋은 중게인 록톤이라 범용 브리티시 록 앰프와 잘 맞습니다."
-
     else:
-        if lead_gain_likelihood >= 7.2 and sustain >= 6.0 and mid_focus >= 5.5:
+        if rectifier_likelihood >= 7.0:
+            amp_family = "Mesa Rectifier Modern High-Gain"
+            amp_model = "Mesa Dual Rectifier / Triple Rectifier / Modern Recto 계열"
+            amp_examples = ["Mesa Dual Rectifier", "Mesa Triple Rectifier", "Modern Recto"]
+            amp_reason = "미드가 상대적으로 빠지고 저역/고역이 강조된 scooped 하이게인 성향이라 Rectifier 계열과 잘 맞습니다."
+        elif lead_gain_likelihood >= 7.2 and sustain >= 6.0 and mid_focus >= 5.5:
             amp_family = "Singing Lead High-Gain"
             amp_model = "Soldano SLO / Friedman BE Lead / Bogner Ecstasy Red 계열"
             amp_examples = ["Soldano SLO-100", "Friedman BE Lead", "Bogner Ecstasy Red"]
@@ -335,7 +384,16 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
     # 3. 드라이브/부스터 추천 - 세분화 v2
     # -----------------------------
     if drive_intensity >= 7.0:
-        if low_tightness < 5.8:
+        if rectifier_likelihood >= 7.0:
+            drive = {
+                "type": "Tube Screamer / Precision Tight Boost",
+                "model_examples": ["Ibanez TS808", "Maxon OD808", "Horizon Precision Drive"],
+                "drive": 0.8,
+                "tone": 5.0,
+                "level": 8.0,
+                "purpose": "Rectifier 계열 하이게인 앞에서 저역을 조이고 미드를 살짝 밀어 리프를 더 타이트하게 만드는 용도",
+        }
+        elif low_tightness < 5.8:
             drive = {
                 "type": "Tube Screamer Tight Boost",
                 "model_examples": ["Ibanez TS808", "Maxon OD808", "Horizon Devices Precision Drive"],
@@ -840,6 +898,7 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
             "drive_intensity": round(drive_intensity, 2),
             "high_gain_likelihood": round(high_gain_likelihood, 2),
             "lead_gain_likelihood": round(lead_gain_likelihood, 2),
+            "rectifier_likelihood": round(rectifier_likelihood, 2),
             "gain": round(gain, 2),
             "distortion": round(distortion, 2),
             "compression": round(compression, 2),
