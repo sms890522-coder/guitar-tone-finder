@@ -41,6 +41,159 @@ def _safe_median(values: list[float] | np.ndarray) -> float:
         return 0.0
     return float(np.median(values))
 
+def _build_segment_profile(
+    rms: np.ndarray,
+    centroid: np.ndarray,
+    zcr: np.ndarray,
+    flatness: np.ndarray,
+    onset_env: np.ndarray,
+    S: np.ndarray,
+    freqs: np.ndarray,
+    sr: int,
+    hop_length: int,
+    segment_seconds: float = 3.0,
+) -> dict[str, Any]:
+    """
+    전체 평균 대신 대표 구간을 고르기 위한 lightweight segment analyzer.
+    - 3초 단위로 나눔
+    - 에너지, 미드 존재감, onset을 기준으로 기타가 잘 들리는 구간을 선택
+    - 믹스 복잡도와 연주 스타일 힌트용 값을 만든다.
+    """
+
+    frames_per_segment = max(1, int((segment_seconds * sr) / hop_length))
+    total_frames = min(len(rms), len(centroid), len(zcr), len(flatness), S.shape[1])
+
+    if total_frames <= frames_per_segment:
+        return {
+            "segment_count": 1,
+            "representative_start_sec": 0.0,
+            "representative_end_sec": round(total_frames * hop_length / sr, 2),
+            "representative_energy": round(_score(float(np.mean(rms)), 0.01, 0.16), 1),
+            "representative_mid_density": 0.0,
+            "representative_onset_density": 0.0,
+            "mix_complexity": 0.0,
+            "low_chug_likelihood": 0.0,
+            "single_note_lead_likelihood": 0.0,
+            "chord_strum_likelihood": 0.0,
+        }
+
+    low_idx = np.where((freqs >= 80) & (freqs < 250))[0]
+    mid_idx = np.where((freqs >= 700) & (freqs < 1800))[0]
+    high_idx = np.where((freqs >= 1800) & (freqs < 6500))[0]
+    full_idx = np.where((freqs >= 80) & (freqs < 8000))[0]
+
+    segment_rows = []
+
+    for start in range(0, total_frames - frames_per_segment + 1, frames_per_segment):
+        end = start + frames_per_segment
+
+        seg_rms = rms[start:end]
+        seg_centroid = centroid[start:end]
+        seg_zcr = zcr[start:end]
+        seg_flatness = flatness[start:end]
+        seg_onset = onset_env[start:end] if len(onset_env) >= end else onset_env[start:min(end, len(onset_env))]
+
+        seg_S = S[:, start:end]
+
+        total_energy = float(np.sum(seg_S[full_idx, :]) + 1e-9) if len(full_idx) else float(np.sum(seg_S) + 1e-9)
+        low_energy = float(np.sum(seg_S[low_idx, :]) / total_energy) if len(low_idx) else 0.0
+        mid_energy = float(np.sum(seg_S[mid_idx, :]) / total_energy) if len(mid_idx) else 0.0
+        high_energy = float(np.sum(seg_S[high_idx, :]) / total_energy) if len(high_idx) else 0.0
+
+        rms_mean = float(np.mean(seg_rms))
+        onset_mean = float(np.mean(seg_onset)) if len(seg_onset) else 0.0
+        onset_density = _score(onset_mean, 0.05, 2.0)
+
+        energy_score = _score(rms_mean, 0.01, 0.16)
+        mid_density = _score(mid_energy + high_energy, 0.12, 0.55)
+        low_density = _score(low_energy, 0.04, 0.24)
+
+        # 기타가 잘 들리는 대표 구간 점수
+        representative_score = (
+            0.45 * energy_score
+            + 0.35 * mid_density
+            + 0.20 * onset_density
+        )
+
+        # 믹스 복잡도: 저역+고역+onset+flatness가 모두 높으면 다른 악기 섞였을 가능성
+        mix_complexity = _clamp(
+            0.30 * _score(float(np.mean(seg_centroid)), 1200, 5200)
+            + 0.25 * _score(float(np.mean(seg_flatness)), 0.002, 0.08)
+            + 0.25 * onset_density
+            + 0.20 * low_density
+        )
+
+        # 연주 스타일 힌트
+        low_chug = _clamp(
+            0.45 * low_density
+            + 0.30 * onset_density
+            + 0.25 * _score(float(np.mean(seg_zcr)), 0.025, 0.14)
+        )
+
+        single_note_lead = _clamp(
+            0.40 * mid_density
+            + 0.30 * _score(float(np.mean(seg_rms)) / (float(np.std(seg_rms)) + 1e-9), 1.2, 7.0)
+            + 0.20 * _score(float(np.mean(seg_centroid)), 1000, 3500)
+            - 0.15 * low_density
+        )
+
+        chord_strum = _clamp(
+            0.40 * onset_density
+            + 0.25 * mid_density
+            + 0.20 * high_energy * 10
+            + 0.15 * _score(float(np.std(seg_centroid)), 100, 1200)
+        )
+
+        segment_rows.append(
+            {
+                "start_frame": start,
+                "end_frame": end,
+                "start_sec": round(start * hop_length / sr, 2),
+                "end_sec": round(end * hop_length / sr, 2),
+                "representative_score": representative_score,
+                "energy_score": energy_score,
+                "mid_density": mid_density,
+                "onset_density": onset_density,
+                "mix_complexity": mix_complexity,
+                "low_chug_likelihood": low_chug,
+                "single_note_lead_likelihood": single_note_lead,
+                "chord_strum_likelihood": chord_strum,
+            }
+        )
+
+    if not segment_rows:
+        return {
+            "segment_count": 0,
+            "representative_start_sec": 0.0,
+            "representative_end_sec": 0.0,
+            "representative_energy": 0.0,
+            "representative_mid_density": 0.0,
+            "representative_onset_density": 0.0,
+            "mix_complexity": 0.0,
+            "low_chug_likelihood": 0.0,
+            "single_note_lead_likelihood": 0.0,
+            "chord_strum_likelihood": 0.0,
+        }
+
+    segment_rows = sorted(segment_rows, key=lambda item: item["representative_score"], reverse=True)
+    top_segments = segment_rows[: min(5, len(segment_rows))]
+    best = top_segments[0]
+
+    return {
+        "segment_count": len(segment_rows),
+        "representative_start_sec": best["start_sec"],
+        "representative_end_sec": best["end_sec"],
+        "representative_energy": round(_safe_median([s["energy_score"] for s in top_segments]), 1),
+        "representative_mid_density": round(_safe_median([s["mid_density"] for s in top_segments]), 1),
+        "representative_onset_density": round(_safe_median([s["onset_density"] for s in top_segments]), 1),
+        "mix_complexity": round(_safe_median([s["mix_complexity"] for s in top_segments]), 1),
+        "low_chug_likelihood": round(_safe_median([s["low_chug_likelihood"] for s in top_segments]), 1),
+        "single_note_lead_likelihood": round(_safe_median([s["single_note_lead_likelihood"] for s in top_segments]), 1),
+        "chord_strum_likelihood": round(_safe_median([s["chord_strum_likelihood"] for s in top_segments]), 1),
+        "top_segments": top_segments[:3],
+    }
+
+
 def _normalize_for_analysis(y: np.ndarray, target_rms: float = 0.08, max_gain: float = 8.0) -> np.ndarray:
     """
     분석 안정성을 위한 RMS 기반 정규화.
@@ -205,6 +358,18 @@ def analyze_audio(path: str) -> dict[str, Any]:
     S = np.abs(S_complex) ** 2
     freqs = librosa.fft_frequencies(sr=sr, n_fft=n_fft)
 
+    segment_profile = _build_segment_profile(
+        rms=rms,
+        centroid=centroid,
+        zcr=zcr,
+        flatness=flatness,
+        onset_env=onset_env,
+        S=S,
+        freqs=freqs,
+        sr=sr,
+        hop_length=hop_length,
+    )
+    
     # v6 세분화 대역
     sub_bass_energy = _band_energy_ratio(S, freqs, 40, 80)
     bass_energy = _band_energy_ratio(S, freqs, 80, 160)
@@ -904,5 +1069,6 @@ def analyze_audio(path: str) -> dict[str, Any]:
         "eq_profile": eq_profile,
         "space": space_profile,
         "effects": effects_profile,
+        "segment_profile": segment_profile,
         "debug_space": debug_space,
     }
