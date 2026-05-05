@@ -51,6 +51,8 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
 
     effects = analysis.get("effects", {})
 
+    debug_space = analysis.get("debug_space", {})
+
     gain = _get_score(scores, "gain")
     brightness = _get_score(scores, "brightness")
     warmth = _get_score(scores, "warmth")
@@ -78,6 +80,13 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
     clarity = _get_score(scores, "clarity", brightness)
     scoop = _get_score(scores, "scoop", 0.0)
     bite = _get_score(scores, "bite", pick_attack)
+
+    recto_shape_score = _get_score(debug_space, "recto_shape_score", 0.0)
+    recto_edge_to_mid_ratio = _get_score(debug_space, "recto_edge_to_mid_ratio", 0.0)
+    recto_high_to_mid_ratio = _get_score(debug_space, "recto_high_to_mid_ratio", 0.0)
+    recto_low_to_mid_ratio = _get_score(debug_space, "recto_low_to_mid_ratio", 0.0)
+    density_dynamic_score = _get_score(debug_space, "density_dynamic_score", 0.0)
+    driven_band_density = _get_score(debug_space, "driven_band_density", 0.0)
 
     eq_bass = _get_score(eq, "bass", _get_score(eq, "low", 0.0))
     eq_sub_bass = _get_score(eq, "sub_bass", 0.0)
@@ -128,77 +137,50 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
         drive_intensity = max(drive_intensity, 8.0)
 
     # -----------------------------
-    # Rectifier / Scooped High-Gain Likelihood v2
+    # Rectifier / Scooped High-Gain Likelihood v4
     # -----------------------------
-    # Mesa Rectifier 계열은 항상 fizz가 높거나 scoop이 극단적으로 높게 나오지 않는다.
-    # IR/마이킹/믹스에 따라 고역이 정리되고 mid가 남아도,
-    # low_tightness, compression, high_gain_likelihood, presence, scoop 조합으로 판단한다.
-
-    low_power = _clamp((eq_bass + eq_sub_bass + _get_score(eq, "low", 0.0)) * 1.8)
-    high_edge = _clamp(
-        0.45 * fizz
-        + 0.35 * presence
-        + 0.20 * brightness
-    )
-
-    scooped_shape = _clamp(
-        0.55 * scoop
-        + 0.25 * max(0.0, 6.5 - mid_focus)
-        + 0.20 * max(0.0, 6.5 - core_mid)
-    )
+    # analyzer.py에서 계산한 recto_shape_score를 우선 사용한다.
+    # Mesa Rectifier는 fizz/presence가 낮게 잡혀도,
+    # mid가 빠지고 low/high edge가 상대적으로 강하면 Rectifier 성향일 수 있다.
 
     rectifier_likelihood = _clamp(
-        0.24 * high_gain_likelihood
-        + 0.18 * drive_intensity
-        + 0.16 * compression
-        + 0.14 * low_tightness
-        + 0.12 * high_edge
-        + 0.10 * scooped_shape
-        + 0.06 * low_power
+        0.42 * recto_shape_score
+        + 0.28 * high_gain_likelihood
+        + 0.14 * scoop
+        + 0.08 * density_dynamic_score
+        + 0.08 * drive_intensity
     )
 
-    # 강제 보정 1: 미드가 과하게 높지 않고, 하이게인/압축/타이트함이 있으면 Rectifier 후보
-    if (
-        high_gain_likelihood >= 5.5
-        and compression >= 5.0
-        and low_tightness >= 5.0
-        and mid_focus <= 6.8
-    ):
-        rectifier_likelihood = max(rectifier_likelihood, 6.6)
-
-    # 강제 보정 2: scooped 느낌이 조금이라도 있고 high edge가 있으면 Rectifier 후보
-    if (
-        high_gain_likelihood >= 5.2
-        and scooped_shape >= 4.8
-        and high_edge >= 4.8
-    ):
-        rectifier_likelihood = max(rectifier_likelihood, 6.8)
-
-    # 강제 보정 3: low tight + presence 조합. fizz가 낮은 Recto IR도 잡기 위함
-    if (
-        drive_intensity >= 5.8
-        and low_tightness >= 5.8
-        and presence >= 4.5
-        and mid_focus <= 7.0
-    ):
-        rectifier_likelihood = max(rectifier_likelihood, 6.7)
-
-    # 강제 보정 4: scoop이 확실하면 더 강하게
-    if (
-        scoop >= 6.0
-        and drive_intensity >= 5.8
-        and high_gain_likelihood >= 5.0
-    ):
+    # 핵심 보정 1:
+    # Recto shape가 강하고 하이게인 가능성이 있으면 Rectifier로 강하게 본다.
+    if recto_shape_score >= 7.0 and high_gain_likelihood >= 5.8:
         rectifier_likelihood = max(rectifier_likelihood, 7.2)
 
-    # Soldano/Friedman/JCM 계열 오판 방지:
-    # 중심 미드와 lead 성향이 너무 높으면 Rectifier를 살짝 낮춘다.
-    if lead_gain_likelihood >= 7.2 and core_mid >= 7.0 and mid_focus >= 7.0:
-        rectifier_likelihood -= 1.2
+    # 핵심 보정 2:
+    # 미드가 극단적으로 낮고 scoop이 높으면 Rectifier/scooped high-gain 후보.
+    if mid_focus <= 2.5 and scoop >= 6.0 and high_gain_likelihood >= 5.5:
+        rectifier_likelihood = max(rectifier_likelihood, 7.3)
 
-    # 너무 클린한 파일은 Rectifier로 올리지 않음
-    if high_gain_likelihood < 4.5 and drive_intensity < 4.8 and distortion < 4.5:
-        rectifier_likelihood = min(rectifier_likelihood, 4.5)
+    # 핵심 보정 3:
+    # low_to_mid가 매우 크면 저역이 중심 미드보다 강한 scooped high-gain 가능성.
+    if recto_low_to_mid_ratio >= 1.4 and recto_shape_score >= 6.5 and high_gain_likelihood >= 5.5:
+        rectifier_likelihood = max(rectifier_likelihood, 7.1)
+
+    # 핵심 보정 4:
+    # edge_to_mid가 매우 크면 Rectifier 계열의 V자형 톤 가능성.
+    if recto_edge_to_mid_ratio >= 1.8 and high_gain_likelihood >= 5.5:
+        rectifier_likelihood = max(rectifier_likelihood, 7.0)
+
+    # Soldano/Friedman/JCM 오판 방지:
+    # 중심 미드와 리드 성향이 높으면 Rectifier 점수를 낮춘다.
+    # 단, 네 Mesa 케이스처럼 mid_focus가 낮으면 절대 감점하지 않는다.
+    if lead_gain_likelihood >= 7.2 and core_mid >= 7.0 and mid_focus >= 7.2:
+        rectifier_likelihood -= 1.0
+
+    # 진짜 클린 보호:
+    # 하이게인 가능성과 recto shape가 둘 다 낮을 때만 Rectifier를 막는다.
+    if high_gain_likelihood < 4.5 and recto_shape_score < 5.5 and drive_intensity < 4.5:
+        rectifier_likelihood = min(rectifier_likelihood, 4.2)
 
     rectifier_likelihood = _clamp(rectifier_likelihood)
 
@@ -244,7 +226,7 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
         tone_type = "Driven Lead / Solo Tone"
         tone_summary = "클린보다는 드라이브가 걸린 리드/솔로톤 성향입니다."
 
-    elif rectifier_likelihood >= 6.5:
+    elif rectifier_likelihood >= 6.2:
         tone_type = "Scooped Rectifier High-Gain"
         tone_summary = "미드가 상대적으로 빠지고 저역/고역이 강조된 Mesa Rectifier 계열 하이게인 성향입니다."
 
@@ -379,7 +361,7 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
             amp_examples = ["Marshall DSL", "Friedman Runt", "Bogner Shiva"]
             amp_reason = "밸런스 좋은 중게인 록톤이라 범용 브리티시 록 앰프와 잘 맞습니다."
     else:
-        if rectifier_likelihood >= 6.5:
+        if rectifier_likelihood >= 6.2:
             amp_family = "Mesa Rectifier Modern High-Gain"
             amp_model = "Mesa Dual Rectifier / Triple Rectifier / Modern Recto 계열"
             amp_examples = ["Mesa Dual Rectifier", "Mesa Triple Rectifier", "Modern Recto"]
@@ -424,7 +406,7 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
     # 3. 드라이브/부스터 추천 - 세분화 v2
     # -----------------------------
     if drive_intensity >= 7.0:
-        if rectifier_likelihood >= 6.5:
+        if rectifier_likelihood >= 6.2:
             drive = {
                 "type": "Tube Screamer / Precision Tight Boost",
                 "model_examples": ["Ibanez TS808", "Maxon OD808", "Horizon Precision Drive"],
@@ -939,6 +921,12 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
             "high_gain_likelihood": round(high_gain_likelihood, 2),
             "lead_gain_likelihood": round(lead_gain_likelihood, 2),
             "rectifier_likelihood": round(rectifier_likelihood, 2),
+            "recto_shape_score": round(recto_shape_score, 2),
+            "recto_edge_to_mid_ratio": round(recto_edge_to_mid_ratio, 3),
+            "recto_high_to_mid_ratio": round(recto_high_to_mid_ratio, 3),
+            "recto_low_to_mid_ratio": round(recto_low_to_mid_ratio, 3),
+            "density_dynamic_score": round(density_dynamic_score, 2),
+            "driven_band_density": round(driven_band_density, 2),
             "gain": round(gain, 2),
             "distortion": round(distortion, 2),
             "compression": round(compression, 2),
