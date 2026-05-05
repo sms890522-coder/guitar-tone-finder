@@ -81,6 +81,40 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
     scoop = _get_score(scores, "scoop", 0.0)
     bite = _get_score(scores, "bite", pick_attack)
 
+    # -----------------------------
+    # Fat Lead Likelihood
+    # -----------------------------
+    # 뚱뚱한 톤 자체가 리드톤은 아니지만,
+    # body/warmth + sustain/compression + mid가 함께 있으면 리드톤 가능성이 높다.
+    fatness = _clamp(
+        0.42 * body
+        + 0.28 * warmth
+        + 0.18 * mud
+        + 0.12 * core_mid
+    )
+
+    fat_lead_likelihood = _clamp(
+        0.30 * fatness
+        + 0.25 * sustain
+        + 0.20 * compression
+        + 0.15 * mid_focus
+        + 0.10 * lead_gain_likelihood
+        - 0.15 * low_tightness
+    )
+
+    # 뚱뚱하고 sustain/compression이 있으면 리드 가능성 보정
+    if fatness >= 6.5 and sustain >= 5.8 and compression >= 5.0:
+        fat_lead_likelihood = max(fat_lead_likelihood, 6.8)
+
+    if fatness >= 7.2 and sustain >= 6.2 and mid_focus >= 5.0:
+        fat_lead_likelihood = max(fat_lead_likelihood, 7.2)
+
+    # 저역이 너무 타이트하고 bite가 강하면 리드보다 리듬 가능성
+    if low_tightness >= 7.0 and bite >= 6.5:
+        fat_lead_likelihood -= 1.2
+
+    fat_lead_likelihood = _clamp(fat_lead_likelihood)
+
     recto_shape_score = _get_score(debug_space, "recto_shape_score", 0.0)
     recto_edge_to_mid_ratio = _get_score(debug_space, "recto_edge_to_mid_ratio", 0.0)
     recto_high_to_mid_ratio = _get_score(debug_space, "recto_high_to_mid_ratio", 0.0)
@@ -221,6 +255,10 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
     if lead_gain_likelihood >= 7.4 and sustain >= 6.2:
         tone_type = "Singing High-Gain Lead"
         tone_summary = "서스테인과 미드가 살아 있는 하이게인 솔로/리드톤 성향입니다."
+
+    elif fat_lead_likelihood >= 7.0 and drive_intensity >= 5.0:
+        tone_type = "Fat Singing Lead"
+        tone_summary = "두꺼운 저중역과 서스테인이 살아 있는 리드/솔로톤 성향입니다."
 
     elif lead_gain_likelihood >= 6.8 and mid_focus >= 5.5:
         tone_type = "Driven Lead / Solo Tone"
@@ -366,6 +404,11 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
             amp_model = "Mesa Dual Rectifier / Triple Rectifier / Modern Recto 계열"
             amp_examples = ["Mesa Dual Rectifier", "Mesa Triple Rectifier", "Modern Recto"]
             amp_reason = "미드가 상대적으로 빠지고 저역/고역이 강조된 scooped 하이게인 성향이라 Rectifier 계열과 잘 맞습니다."
+        elif fat_lead_likelihood >= 7.0 and sustain >= 5.8:
+            amp_family = "Fat Singing Lead Amp"
+            amp_model = "Soldano SLO / Bogner Ecstasy / Friedman BE Lead 계열"
+            amp_examples = ["Soldano SLO-100", "Bogner Ecstasy Red", "Friedman BE Lead"]
+            amp_reason = "두꺼운 저중역과 서스테인이 있어 단음 솔로가 풍성하게 이어지는 리드 하이게인 계열과 잘 맞습니다."
         elif lead_gain_likelihood >= 7.2 and sustain >= 6.0 and mid_focus >= 5.5:
             amp_family = "Singing Lead High-Gain"
             amp_model = "Soldano SLO / Friedman BE Lead / Bogner Ecstasy Red 계열"
@@ -894,6 +937,15 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
         tone_traits.append(
             "녹음 볼륨 기준의 Gain 점수는 낮지만, 왜곡/거칠기/압축 특성이 높아 실제로는 드라이브가 강한 톤으로 판단했습니다."
         )
+    
+    if fat_lead_likelihood >= 7.0:
+        tone_traits.append(
+            "저중역이 두껍고 서스테인이 있어 배킹보다 리드/솔로톤에 어울리는 성향이 있습니다."
+        )
+    elif fatness >= 7.0 and sustain < 5.0:
+        tone_traits.append(
+            "톤은 두껍지만 서스테인이 길지 않아 리드톤보다는 두꺼운 리듬톤일 가능성이 있습니다."
+        )
 
     return {
         "tone_type": tone_type,
@@ -933,6 +985,8 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
             "roughness": round(roughness, 2),
             "sustain": round(sustain, 2),
             "is_probably_clean": is_probably_clean,
+            "fatness": round(fatness, 2),
+            "fat_lead_likelihood": round(fat_lead_likelihood, 2),
         },
         "debug_effects": {
             "stereo_width": round(stereo_width, 2),
