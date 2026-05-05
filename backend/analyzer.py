@@ -41,6 +41,38 @@ def _safe_median(values: list[float] | np.ndarray) -> float:
         return 0.0
     return float(np.median(values))
 
+def _normalize_for_analysis(y: np.ndarray, target_rms: float = 0.08, max_gain: float = 8.0) -> np.ndarray:
+    """
+    분석 안정성을 위한 RMS 기반 정규화.
+    - 너무 작은 파일은 적당히 키운다.
+    - 이미 충분히 큰 파일은 크게 건드리지 않는다.
+    - max_gain으로 과도한 증폭을 막는다.
+    - peak clipping을 피한다.
+    """
+    if y.size == 0:
+        return y
+
+    rms = float(np.sqrt(np.mean(y ** 2)) + 1e-9)
+
+    if rms <= 0:
+        return y
+
+    # 이미 충분히 큰 소스는 그대로 둠
+    if rms >= target_rms:
+        return y
+
+    gain = target_rms / rms
+    gain = min(gain, max_gain)
+
+    y_norm = y * gain
+
+    peak = float(np.max(np.abs(y_norm)) + 1e-9)
+
+    # 클리핑 방지
+    if peak > 0.98:
+        y_norm = y_norm / peak * 0.98
+
+    return y_norm
 
 @dataclass
 class ToneScores:
@@ -83,6 +115,9 @@ class AudioStats:
     zero_crossing_rate: float
     spectral_flatness: float
 
+    original_rms: float
+    normalized_rms: float
+    analysis_gain: float
     sub_bass_energy: float
     bass_energy: float
     mud_energy: float
@@ -130,7 +165,27 @@ def analyze_audio(path: str) -> dict[str, Any]:
 
     if len(y) < sr * 3:
         raise ValueError("오디오가 너무 짧거나 무음에 가깝습니다. 최소 3초 이상의 기타 소리를 업로드해 주세요.")
-        
+
+    # 분석 안정화를 위해 너무 작은 소스는 적당히 키운다.
+    # 이 값은 실제 출력용이 아니라 분석용 신호에만 적용된다.
+    original_rms = float(np.sqrt(np.mean(y ** 2)) + 1e-9)
+    original_peak = float(np.max(np.abs(y)) + 1e-9)
+
+    y_before_norm = y.copy()
+    y = _normalize_for_analysis(y, target_rms=0.08, max_gain=8.0)
+
+    normalized_rms = float(np.sqrt(np.mean(y ** 2)) + 1e-9)
+    normalized_peak = float(np.max(np.abs(y)) + 1e-9)
+
+    analysis_gain = normalized_rms / (original_rms + 1e-9)
+
+    # stereo도 같은 gain을 적용해서 좌우 관계는 유지하면서 레벨만 보정
+    y_stereo = y_stereo * analysis_gain
+    stereo_peak = float(np.max(np.abs(y_stereo)) + 1e-9)
+
+    if stereo_peak > 0.98:
+        y_stereo = y_stereo / stereo_peak * 0.98
+
     duration = float(librosa.get_duration(y=y, sr=sr))
 
     # 기본 특징
@@ -269,10 +324,10 @@ def analyze_audio(path: str) -> dict[str, Any]:
     # Gain은 RMS 비중을 낮추고 distortion/saturation 중심
     rms_score = _score(rms_mean, 0.015, 0.16)
     gain = (
-        0.18 * rms_score
-        + 0.38 * distortion
-        + 0.24 * compression
-        + 0.20 * _score(flatness_mean, 0.003, 0.08)
+        0.08 * rms_score
+        + 0.42 * distortion
+        + 0.28 * compression
+        + 0.22 * _score(flatness_mean, 0.003, 0.08)
     )
     gain = _clamp(gain)
 
@@ -610,6 +665,9 @@ def analyze_audio(path: str) -> dict[str, Any]:
         spectral_rolloff=round(rolloff_mean, 2),
         zero_crossing_rate=round(zcr_mean, 5),
         spectral_flatness=round(flatness_mean, 5),
+        original_rms=round(original_rms, 5),
+        normalized_rms=round(normalized_rms, 5),
+        analysis_gain=round(analysis_gain, 2),
         sub_bass_energy=round(sub_bass_energy, 5),
         bass_energy=round(bass_energy, 5),
         mud_energy=round(mud_energy, 5),
