@@ -50,10 +50,17 @@ type Recommendation = {
   tone_type: string;
   tone_summary: string;
   tone_traits?: string[];
+  playing_role?: string;
+  playing_hints?: string[];
   confidence: number;
   amp_family: string;
   amp_model?: string;
   amp_examples: string[];
+  amp_candidates?: Array<{
+    name: string;
+    score: number;
+    reason: string
+  }>
   amp_reason: string;
   drive: {
     type: string;
@@ -140,6 +147,18 @@ type Result = {
     space?: SpaceProfile;
     effects?: EffectsProfile;
     debug_space?: Record<string, number>;
+    segment_profile?: {
+      segment_count: number;
+      representative_start_sec: number;
+      representative_end_sec: number;
+      representative_energy: number;
+      representative_mid_density: number;
+      representative_onset_density: number;
+      mix_complexity: number;
+      low_chug_likelihood: number;
+      single_note_lead_likelihood: number;
+      chord_strum_likelihood: number;
+    };    
   };
   recommendation: Recommendation;
 };
@@ -439,6 +458,8 @@ function ResultPanel({ result }: { result: Result }) {
   const recommendation = result?.recommendation || ({} as Recommendation);
   const space = result?.analysis?.space;
 
+  const segmentProfile = result?.analysis?.segment_profile;
+  
   const effects = result?.analysis?.effects;
   const effectsRecommendation = recommendation.effects_recommendation;  
 
@@ -501,6 +522,13 @@ function ResultPanel({ result }: { result: Result }) {
           {recommendation.tone_summary || '톤 요약 데이터가 없습니다.'}
         </p>
 
+        {recommendation.playing_role && (
+          <p className="mt-3 inline-flex rounded-full bg-indigo-100 px-3 py-1 text-xs font-bold text-indigo-700">
+            Playing Role: {recommendation.playing_role.replaceAll('_', ' ')}
+          </p>
+        )}
+        
+
         {recommendation.tone_traits && recommendation.tone_traits.length > 0 && (
           <div className="mt-4 space-y-2">
             {recommendation.tone_traits.map((trait) => (
@@ -538,6 +566,35 @@ function ResultPanel({ result }: { result: Result }) {
             </div>
           )}
         </div>
+
+        {recommendation.amp_candidates && recommendation.amp_candidates.length > 0 && (
+          <div className="mt-5 rounded-2xl bg-slate-100 p-4">
+            <p className="text-xs font-bold uppercase text-slate-500">
+              Alternative Amp Candidates
+            </p>
+        
+            <div className="mt-3 space-y-3">
+              {recommendation.amp_candidates.map((candidate, index) => (
+                <div key={candidate.name} className="rounded-xl bg-white p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-black">
+                        {index + 1}. {candidate.name}
+                      </p>
+                      <p className="mt-1 text-xs leading-5 text-slate-600">
+                        {candidate.reason}
+                      </p>
+                    </div>
+                    <p className="rounded-full bg-slate-950 px-2 py-1 text-xs font-black text-white">
+                      {candidate.score}%
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        
       </div>
 
       <div className="mt-5 space-y-3">
@@ -591,6 +648,51 @@ function ResultPanel({ result }: { result: Result }) {
     </div>
   </div>
 
+
+      {segmentProfile && (
+        <div className="mt-6 rounded-[1.5rem] bg-white/5 p-5">
+          <h4 className="font-black">Representative Segment</h4>
+          <p className="mt-2 text-sm leading-6 text-slate-400">
+            전체 파일 중 기타톤이 가장 잘 드러나는 대표 구간을 기준으로 보조 판단했습니다.
+          </p>
+      
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <div className="rounded-2xl bg-white/5 p-4">
+              <p className="text-xs uppercase text-slate-400">Best Section</p>
+              <p className="mt-1 text-xl font-black">
+                {segmentProfile.representative_start_sec}s – {segmentProfile.representative_end_sec}s
+              </p>
+            </div>
+      
+            <div className="rounded-2xl bg-white/5 p-4">
+              <p className="text-xs uppercase text-slate-400">Mix Complexity</p>
+              <p className="mt-1 text-xl font-black">
+                {Number(segmentProfile.mix_complexity || 0).toFixed(1)}
+              </p>
+            </div>
+          </div>
+      
+          <div className="mt-4 space-y-3">
+            <ScoreBar
+              title="Low Chug"
+              desc="팜뮤트/저역 리프 가능성"
+              value={segmentProfile.low_chug_likelihood}
+            />
+            <ScoreBar
+              title="Single Note Lead"
+              desc="단음 리드/솔로 가능성"
+              value={segmentProfile.single_note_lead_likelihood}
+            />
+            <ScoreBar
+              title="Chord Strum"
+              desc="코드 스트럼 가능성"
+              value={segmentProfile.chord_strum_likelihood}
+            />
+          </div>
+        </div>
+      )}
+
+      
       {space && (
         <div className="mt-6 rounded-[1.5rem] bg-white/5 p-5">
           <h4 className="font-black">Space Analysis</h4>
@@ -764,6 +866,17 @@ function ResultPanel({ result }: { result: Result }) {
         </div>
       </div>
 
+      {recommendation.playing_hints && recommendation.playing_hints.length > 0 && (
+        <div className="mt-6 rounded-[1.5rem] bg-white/5 p-5">
+          <h4 className="font-black">Playing Style Hints</h4>
+          <div className="mt-3 space-y-2 text-sm leading-6 text-slate-300">
+            {recommendation.playing_hints.map((hint) => (
+              <p key={hint}>• {hint}</p>
+            ))}
+          </div>
+        </div>
+      )}
+      
       {eqTips.length > 0 && (
         <div className="mt-6 rounded-[1.5rem] bg-amber-400/10 p-5 ring-1 ring-amber-300/10">
           <h4 className="font-black text-amber-100">EQ 보정 팁</h4>
