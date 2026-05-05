@@ -323,6 +323,23 @@ def analyze_audio(path: str) -> dict[str, Any]:
         0.55,
     )
 
+    # Rectifier / scooped high-gain shape
+    # Mesa Rectifier 계열은 core_mid가 낮고, low/high 쪽이 상대적으로 살아 있는 경우가 많다.
+    recto_low_side = sub_bass_energy + bass_energy
+    recto_center_mid = warm_body_energy + core_mid_energy
+    recto_high_side = upper_mid_energy + presence_energy + fizz_energy
+
+    recto_edge_to_mid_ratio = (recto_low_side + recto_high_side + 1e-9) / (recto_center_mid + 1e-9)
+    recto_high_to_mid_ratio = (recto_high_side + 1e-9) / (recto_center_mid + 1e-9)
+    recto_low_to_mid_ratio = (recto_low_side + 1e-9) / (recto_center_mid + 1e-9)
+
+    recto_shape_score = _clamp(
+        0.45 * _score(recto_edge_to_mid_ratio, 0.65, 1.80)
+        + 0.30 * _score(recto_high_to_mid_ratio, 0.35, 1.30)
+        + 0.15 * _score(recto_low_to_mid_ratio, 0.15, 0.90)
+        + 0.10 * scoop
+    )
+
     # 캐비넷/IR로 fizz가 정리된 하이게인도 있으므로 fizz 비중은 낮게
     saturation_density = (
         0.30 * compression
@@ -334,9 +351,10 @@ def analyze_audio(path: str) -> dict[str, Any]:
     )
 
     high_gain_likelihood = (
-        0.45 * saturation_density
-        + 0.35 * density_dynamic_score
-        + 0.20 * distortion
+        0.34 * saturation_density
+        + 0.25 * density_dynamic_score
+        + 0.18 * distortion
+        + 0.23 * recto_shape_score
     )
 
     # 하이게인 보정 규칙
@@ -370,6 +388,28 @@ def analyze_audio(path: str) -> dict[str, Any]:
     if low_tightness >= 6.5 and bite >= 5.8 and driven_band_density >= 6.0:
         high_gain_likelihood = max(high_gain_likelihood, 6.9)
 
+    # Rectifier / scooped high-gain 보정:
+    # distortion 수치가 낮게 잡혀도, 미드 대비 저역/고역 모양이 Rectifier에 가까우면 올려준다.
+    if recto_shape_score >= 6.5 and density_dynamic_score >= 4.5:
+        high_gain_likelihood = max(high_gain_likelihood, 6.2)
+
+    if recto_shape_score >= 7.2:
+        high_gain_likelihood = max(high_gain_likelihood, 6.6)
+
+    if (
+        recto_shape_score >= 5.8
+        and (presence >= 4.5 or fizz >= 4.5 or brightness >= 5.0)
+        and mid_focus <= 6.8
+    ):
+        high_gain_likelihood = max(high_gain_likelihood, 6.1)
+
+    if (
+        recto_shape_score >= 5.5
+        and low_tightness >= 4.8
+        and mid_focus <= 7.0
+    ):
+        high_gain_likelihood = max(high_gain_likelihood, 6.0)
+
     # 클린톤 오판 방지:
     # brightness만 높고 compression/sustain이 낮으면 하이게인으로 올리지 않음
     # 클린톤 보호:
@@ -380,6 +420,7 @@ def analyze_audio(path: str) -> dict[str, Any]:
         and sustain < 4.0
         and distortion < 4.5
         and driven_band_density < 4.5
+        and recto_shape_score < 5.5
         and bite < 4.5
     ):
         high_gain_likelihood = min(high_gain_likelihood, 4.0)
@@ -790,6 +831,12 @@ def analyze_audio(path: str) -> dict[str, Any]:
         "dry_penalty": round(dry_penalty, 2),
         "delay_echo": round(delay_echo, 2),
         "final_ambience": round(_clamp(ambience), 2),
+        "recto_shape_score": round(recto_shape_score, 2),
+        "recto_edge_to_mid_ratio": round(recto_edge_to_mid_ratio, 4),
+        "recto_high_to_mid_ratio": round(recto_high_to_mid_ratio, 4),
+        "recto_low_to_mid_ratio": round(recto_low_to_mid_ratio, 4),
+        "density_dynamic_score": round(density_dynamic_score, 2),
+        "driven_band_density": round(driven_band_density, 2),
     }
     
     return {
