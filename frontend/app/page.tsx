@@ -162,6 +162,38 @@ type EffectsProfile = {
   side_mid_ratio?: number;
 };
 
+
+type TabNote = {
+  start: number;
+  end: number;
+  duration: number;
+  frequency: number;
+  midi: number;
+  note: string;
+  string: string;
+  fret: number;
+  confidence: number;
+};
+
+type TabAnalysis = {
+  version: string;
+  duration: number;
+  tuning: string;
+  note_count: number;
+  confidence: number;
+  tab: string;
+  notes: TabNote[];
+  warnings: string[];
+  disclaimer: string;
+};
+
+type TabResult = {
+  ok: boolean;
+  filename: string;
+  tab_analysis: TabAnalysis;
+};
+
+
 type Result = {
   ok: boolean;
   filename: string;
@@ -271,6 +303,9 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [progress, setProgress] = useState(0);
+  const [tabResult, setTabResult] = useState<TabResult | null>(null);
+  const [tabLoading, setTabLoading] = useState(false);
+  const [tabError, setTabError] = useState('');
 
   useEffect(() => {
     const API_BASE_URL = 'https://guitar-tone-finder-api.onrender.com';
@@ -347,6 +382,48 @@ export default function Home() {
     }
   }
 
+  async function analyzeTab() {
+    if (!file) {
+      setTabError('타브를 만들 오디오 파일을 먼저 업로드해주세요.');
+      return;
+    }
+  
+    if (file.size > MAX_FILE_SIZE) {
+      setTabError('파일이 너무 큽니다. 25MB 이하 파일을 업로드해 주세요.');
+      return;
+    }
+  
+    setTabLoading(true);
+    setTabError('');
+    setTabResult(null);
+  
+    const formData = new FormData();
+    formData.append('file', file);
+  
+    try {
+      const API_BASE_URL = 'https://guitar-tone-finder-api.onrender.com';
+  
+      const response = await fetch(`${API_BASE_URL}/tab-analyze`, {
+        method: 'POST',
+        body: formData,
+      });
+  
+      const data = await response.json();
+  
+      console.log('TAB RESULT:', data);
+  
+      if (!response.ok) {
+        throw new Error(data.detail || '타브 분석에 실패했습니다.');
+      }
+  
+      setTabResult(data);
+    } catch (err) {
+      setTabError(err instanceof Error ? err.message : '알 수 없는 오류가 발생했습니다.');
+    } finally {
+      setTabLoading(false);
+    }
+  }
+
   return (
     <main className="min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top_left,#2e1065,transparent_34%),radial-gradient(circle_at_top_right,#0f766e,transparent_28%),#080913] px-5 py-8 md:px-10">
       <section className="mx-auto max-w-6xl">
@@ -391,6 +468,8 @@ export default function Home() {
                   setFile(event.target.files?.[0] || null);
                   setResult(null);
                   setError('');
+                  setTabResult(null);
+                  setTabError('');
                 }}
               />
               <span className="text-5xl">🎸</span>
@@ -457,6 +536,38 @@ export default function Home() {
           </section>
 
           <section className="glass rounded-[2rem] p-6 md:p-8">
+            {result && (
+              <div className="mb-5 rounded-[1.5rem] bg-white/5 p-5 ring-1 ring-white/10">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-[0.2em] text-indigo-200">
+                      Tab Draft
+                    </p>
+                    <h4 className="mt-1 font-black">단음 리프 타브 초안 만들기</h4>
+                    <p className="mt-1 text-sm leading-6 text-slate-400">
+                      오디오에서 들리는 주요 단음 라인을 추정해 기타 타브 초안을 만듭니다.
+                    </p>
+                  </div>
+          
+                  <button
+                    onClick={analyzeTab}
+                    disabled={tabLoading || !file}
+                    className="rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-950 transition hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {tabLoading ? '타브 생성 중...' : '타브 초안 만들기'}
+                  </button>
+                </div>
+          
+                {tabError && (
+                  <p className="mt-4 rounded-xl bg-rose-500/15 p-4 text-sm text-rose-100">
+                    {tabError}
+                  </p>
+                )}
+          
+                {tabResult && <TabPanel tabResult={tabResult} />}
+              </div>
+            )}
+          
             {!result ? (
               <div className="flex h-full min-h-[520px] flex-col justify-center rounded-[1.5rem] border border-white/10 bg-white/[0.03] p-8 text-center">
                 <div className="mx-auto grid h-24 w-24 place-items-center rounded-3xl bg-white text-5xl text-slate-950 shadow-glow">
@@ -1204,6 +1315,71 @@ function ScoreBar({ title, desc, value }: { title: string; desc: string; value: 
           style={{ width: `${Math.max(0, Math.min(100, safeValue * 10))}%` }}
         />
       </div>
+    </div>
+  );
+}
+
+
+function TabPanel({ tabResult }: { tabResult: TabResult }) {
+  const tab = tabResult.tab_analysis;
+
+  return (
+    <div className="mt-5 rounded-2xl bg-slate-950/60 p-4">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-xs uppercase text-slate-400">Estimated Tab</p>
+          <h4 className="font-black">단음 리프 타브 초안</h4>
+        </div>
+
+        <div className="rounded-full bg-white px-3 py-1 text-xs font-black text-slate-950">
+          Confidence {Math.round((tab.confidence || 0) * 100)}%
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+        <div className="rounded-xl bg-white/5 p-3">
+          <p className="text-xs text-slate-400">Tuning</p>
+          <p className="font-bold">{tab.tuning}</p>
+        </div>
+        <div className="rounded-xl bg-white/5 p-3">
+          <p className="text-xs text-slate-400">Notes</p>
+          <p className="font-bold">{tab.note_count}</p>
+        </div>
+        <div className="rounded-xl bg-white/5 p-3">
+          <p className="text-xs text-slate-400">Duration</p>
+          <p className="font-bold">{tab.duration}s</p>
+        </div>
+      </div>
+
+      <pre className="mt-4 overflow-x-auto rounded-xl bg-black/50 p-4 font-mono text-xs leading-6 text-emerald-100">
+        {tab.tab}
+      </pre>
+
+      {tab.notes.length > 0 && (
+        <div className="mt-4 rounded-xl bg-white/5 p-4">
+          <p className="text-xs uppercase text-slate-400">Detected Notes</p>
+          <div className="mt-3 max-h-56 overflow-y-auto text-xs leading-6 text-slate-300">
+            {tab.notes.map((note, index) => (
+              <p key={`${note.start}-${index}`}>
+                {index + 1}. {note.start}s · {note.note} · {note.string} string / fret {note.fret} · confidence{' '}
+                {Math.round(note.confidence * 100)}%
+              </p>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {tab.warnings.length > 0 && (
+        <div className="mt-4 rounded-xl bg-amber-400/10 p-4 text-sm leading-6 text-amber-100">
+          {tab.warnings.map((warning) => (
+            <p key={warning}>※ {warning}</p>
+          ))}
+        </div>
+      )}
+
+      <p className="mt-4 text-xs leading-5 text-slate-400">
+        {tab.disclaimer}
+      </p>
     </div>
   );
 }
