@@ -90,6 +90,32 @@ type Recommendation = {
     delay_echo?: number;
   };
   eq_tips: string[];
+    suggested_eq_moves?: Array<{
+    type: string;
+    frequency: string;
+    gain_db: number;
+    q: number | string;
+    reason: string;
+  }>;
+
+  cab_detail?: {
+    cab_type: string;
+    primary_mic: string;
+    secondary_mic: string;
+    mic_position: string;
+    low_cut: string;
+    high_cut: string;
+    room_level: string;
+    proximity: string;
+    tip: string;
+  };
+
+  fm3_preset_guide?: {
+    preset_name: string;
+    grid: string[];
+    blocks: Record<string, any>;
+    notes: string[];
+  };
   chain: string[];
   notes: string[];
   effects_recommendation?: {
@@ -452,6 +478,173 @@ export default function Home() {
   );
 }
 
+function buildFm3PresetGuideText(result: Result) {
+  const recommendation = result.recommendation;
+  const guide = recommendation.fm3_preset_guide;
+
+  if (!guide) {
+    return 'FM3 프리셋 가이드 데이터가 없습니다.';
+  }
+
+  const blocks = guide.blocks || {};
+  const amp = blocks.amp || {};
+  const drive = blocks.drive || {};
+  const cab = blocks.cab || {};
+  const eq = Array.isArray(blocks.eq) ? blocks.eq : [];
+  const modulation = blocks.modulation || {};
+  const delay = blocks.delay || {};
+  const reverb = blocks.reverb || {};
+  const gate = blocks.input_gate || {};
+
+  return `
+ToneScope AI - FM3 Preset Guide
+================================
+
+Preset Name:
+${guide.preset_name}
+
+Tone Type:
+${recommendation.tone_type}
+
+Summary:
+${recommendation.tone_summary}
+
+Confidence:
+${recommendation.confidence}%
+
+Playing Role:
+${recommendation.playing_role || 'N/A'}
+
+
+Grid
+----
+${guide.grid.map((item, index) => `${index + 1}. ${item}`).join('\n')}
+
+
+Input Gate
+----------
+Type: ${gate.type || 'Input Gate'}
+Threshold: ${gate.threshold || '-'}
+Ratio: ${gate.ratio || '-'}
+Attack: ${gate.attack || '-'}
+Release: ${gate.release || '-'}
+Tip: ${gate.tip || '-'}
+
+
+Drive Block
+-----------
+Model: ${drive.model || '-'}
+Examples: ${(drive.model_examples || []).join(', ')}
+Drive: ${drive.drive ?? '-'}
+Tone: ${drive.tone ?? '-'}
+Level: ${drive.level ?? '-'}
+Purpose: ${drive.purpose || '-'}
+
+
+Amp Block
+---------
+Family: ${amp.family || '-'}
+Model: ${amp.model || '-'}
+Examples: ${(amp.examples || []).join(', ')}
+
+Gain: ${amp.gain ?? '-'}
+Bass: ${amp.bass ?? '-'}
+Mid: ${amp.mid ?? '-'}
+Treble: ${amp.treble ?? '-'}
+Presence: ${amp.presence ?? '-'}
+Master: ${amp.master ?? '-'}
+
+Tip:
+${amp.tip || '-'}
+
+
+Cab Block
+---------
+Cab: ${cab.cab || '-'}
+Cab Type: ${cab.cab_type || '-'}
+Mic: ${cab.mic || '-'}
+Primary Mic: ${cab.primary_mic || '-'}
+Secondary Mic: ${cab.secondary_mic || '-'}
+Mic Position: ${cab.mic_position || '-'}
+Low Cut: ${cab.low_cut || '-'}
+High Cut: ${cab.high_cut || '-'}
+Room Level: ${cab.room_level || '-'}
+Proximity: ${cab.proximity || '-'}
+
+Tip:
+${cab.tip || '-'}
+
+
+Suggested EQ Moves
+------------------
+${eq
+  .map(
+    (move: any, index: number) =>
+      `${index + 1}. ${move.type}
+   Frequency: ${move.frequency}
+   Gain: ${move.gain_db}dB
+   Q: ${move.q}
+   Reason: ${move.reason}`
+  )
+  .join('\n\n')}
+
+
+Modulation
+----------
+Effect: ${modulation.effect || '-'}
+Mix: ${modulation.mix ?? '-'}%
+Rate: ${modulation.rate ?? '-'}
+Depth: ${modulation.depth ?? '-'}
+Tip: ${modulation.tip || '-'}
+
+
+Delay
+-----
+Type: ${delay.type || '-'}
+Time: ${delay.time || '-'}
+Mix: ${delay.mix ?? '-'}%
+Feedback: ${delay.feedback ?? '-'}%
+Tip: ${delay.tip || '-'}
+
+
+Reverb
+------
+Type: ${reverb.type || '-'}
+Mix: ${reverb.mix ?? '-'}%
+Delay: ${reverb.delay || '-'}
+Delay Mix: ${reverb.delay_mix ?? '-'}%
+Tip: ${reverb.tip || '-'}
+
+
+Notes
+-----
+${guide.notes.map((note) => `- ${note}`).join('\n')}
+`.trim();
+}
+
+function downloadFm3PresetGuide(result: Result) {
+  const text = buildFm3PresetGuideText(result);
+  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+
+  const safeName =
+    result.recommendation.tone_type
+      ?.toLowerCase()
+      .replaceAll('/', '-')
+      .replaceAll(' ', '-')
+      .replaceAll('--', '-')
+      .replace(/[^a-z0-9가-힣-]/gi, '') || 'fm3-preset-guide';
+
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `${safeName}-fm3-preset-guide.txt`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+
+  URL.revokeObjectURL(url);
+}
+
 function ResultPanel({ result }: { result: Result }) {
   const scores = result?.analysis?.scores || ({} as Scores);
   const eqProfile = result?.analysis?.eq_profile || ({} as EqProfile);
@@ -502,8 +695,30 @@ function ResultPanel({ result }: { result: Result }) {
 
   return (
     <div>
-      <div className="rounded-[1.5rem] bg-white p-6 text-slate-950">
-        <div className="flex items-start justify-between gap-4">
+      {recommendation.fm3_preset_guide && (
+        <div className="mb-5 rounded-[1.5rem] bg-indigo-400/10 p-5 ring-1 ring-indigo-300/20">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.2em] text-indigo-200">
+                Preset Guide
+              </p>
+              <h4 className="mt-1 font-black">FM3 프리셋 가이드 생성</h4>
+              <p className="mt-1 text-sm leading-6 text-slate-300">
+                분석 결과를 바탕으로 FM3-Edit에서 따라 만들 수 있는 세팅 가이드를 다운로드합니다.
+              </p>
+            </div>
+  
+            <button
+              onClick={() => downloadFm3PresetGuide(result)}
+              className="rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-950 transition hover:scale-[1.02]"
+            >
+              FM3 가이드 다운로드
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="rounded-[1.5rem] bg-white p-6 text-slate-950">        <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-sm font-bold uppercase tracking-[0.25em] text-indigo-600">
               Tone Type
@@ -767,6 +982,37 @@ function ResultPanel({ result }: { result: Result }) {
 
         <InfoCard title="Mic" main={cabinet.mic} body="추천 마이크/IR 방향" />
 
+      
+        {recommendation.cab_detail && (
+          <div className="rounded-2xl bg-white/5 p-4 sm:col-span-2">
+            <p className="text-xs uppercase text-slate-400">Cab / Mic Detail</p>
+            <p className="mt-1 font-black">{recommendation.cab_detail.cab_type}</p>
+        
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <div className="rounded-xl bg-white/5 p-3">
+                <p className="text-xs text-slate-400">Primary Mic</p>
+                <p className="font-bold">{recommendation.cab_detail.primary_mic}</p>
+              </div>
+              <div className="rounded-xl bg-white/5 p-3">
+                <p className="text-xs text-slate-400">Secondary Mic</p>
+                <p className="font-bold">{recommendation.cab_detail.secondary_mic}</p>
+              </div>
+              <div className="rounded-xl bg-white/5 p-3">
+                <p className="text-xs text-slate-400">Low Cut</p>
+                <p className="font-bold">{recommendation.cab_detail.low_cut}</p>
+              </div>
+              <div className="rounded-xl bg-white/5 p-3">
+                <p className="text-xs text-slate-400">High Cut</p>
+                <p className="font-bold">{recommendation.cab_detail.high_cut}</p>
+              </div>
+            </div>
+        
+            <p className="mt-3 text-xs leading-5 text-slate-400">
+              {recommendation.cab_detail.tip}
+            </p>
+          </div>
+        )}
+        
         <InfoCard
           title={ambience.character || 'Ambience'}
           main={ambience.reverb}
@@ -876,6 +1122,37 @@ function ResultPanel({ result }: { result: Result }) {
           </div>
         </div>
       )}
+
+      {recommendation.suggested_eq_moves && recommendation.suggested_eq_moves.length > 0 && (
+        <div className="mt-6 rounded-[1.5rem] bg-white/5 p-5">
+          <h4 className="font-black">Suggested EQ Moves</h4>
+          <p className="mt-2 text-sm leading-6 text-slate-400">
+            실제 EQ에서 적용해볼 수 있는 보정값입니다. 환경에 따라 ±0.5~1dB 정도 조정하세요.
+          </p>
+      
+          <div className="mt-4 space-y-3">
+            {recommendation.suggested_eq_moves.map((move, index) => (
+              <div key={`${move.type}-${index}`} className="rounded-2xl bg-white/5 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-black">{move.type}</p>
+                    <p className="mt-1 text-xs leading-5 text-slate-400">
+                      {move.reason}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-black">{move.frequency}</p>
+                    <p className="mt-1 text-xs text-slate-400">
+                      {move.gain_db > 0 ? `+${move.gain_db}` : move.gain_db}dB / Q {move.q}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       
       {eqTips.length > 0 && (
         <div className="mt-6 rounded-[1.5rem] bg-amber-400/10 p-5 ring-1 ring-amber-300/10">
