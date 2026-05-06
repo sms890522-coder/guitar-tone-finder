@@ -64,34 +64,37 @@ async def analyze(file: UploadFile = File(...)):
             pass
 
 
-    @app.post("/tab-analyze")
-    async def tab_analyze(file: UploadFile = File(...)):
-        suffix = Path(file.filename or "").suffix.lower()
-    
-        if suffix not in ALLOWED_EXTENSIONS:
-            raise HTTPException(status_code=400, detail="MP3, WAV, M4A, AAC, FLAC, OGG 파일만 지원합니다.")
-    
-        content = await file.read()
-    
-        if len(content) > MAX_FILE_SIZE:
-            raise HTTPException(status_code=413, detail="파일은 25MB 이하로 업로드해주세요.")
-    
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-            tmp.write(content)
-            tmp_path = tmp.name
-    
+
+@app.post("/tab-analyze")
+async def tab_analyze(file: UploadFile = File(...)):
+    suffix = Path(file.filename or "").suffix.lower()
+
+    if suffix not in ALLOWED_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="MP3, WAV, M4A, AAC, FLAC, OGG 파일만 지원합니다.")
+
+    content = await file.read()
+
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(status_code=413, detail="파일은 25MB 이하로 업로드해주세요.")
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        tmp.write(content)
+        tmp_path = tmp.name
+
+    try:
+        tab_result = analyze_tab(tmp_path)
+        return {
+            "ok": True,
+            "filename": file.filename,
+            "tab_analysis": tab_result,
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"타브 분석에 실패했습니다: {exc}") from exc
+    finally:
         try:
-            tab_result = analyze_tab(tmp_path)
-            return {
-                "ok": True,
-                "filename": file.filename,
-                "tab_analysis": tab_result,
-            }
-        except Exception as exc:
-            raise HTTPException(status_code=500, detail=f"타브 분석에 실패했습니다: {exc}") from exc
-        finally:
-            try:
-                os.remove(tmp_path)
-            except OSError:
-                pass
+            os.remove(tmp_path)
+        except OSError:
+            pass
+
+
 
