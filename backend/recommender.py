@@ -746,7 +746,7 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
         "master": 5.0,
     }
 
-        # -----------------------------
+    # -----------------------------
     # 5. 캐비넷/마이크/IR 추천
     # -----------------------------
     if drive_intensity >= 6.8 and brightness >= 6.0:
@@ -780,6 +780,89 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
             "tip": "밸런스형 톤이므로 SM57과 리본 마이크 조합으로 기본기를 잡는 것이 좋습니다.",
         }
 
+
+    # -----------------------------
+    # 5-1. Cab / Mic Detail Recommendation
+    # -----------------------------
+    if rectifier_likelihood >= 6.2:
+        cab_detail = {
+            "cab_type": "4x12 V30 Modern",
+            "primary_mic": "SM57",
+            "secondary_mic": "R121 또는 MD421",
+            "mic_position": "SM57은 cap edge, R121은 살짝 뒤로 블렌드",
+            "low_cut": "80–100Hz",
+            "high_cut": "7.5–8.5kHz",
+            "room_level": "0–5%",
+            "proximity": "낮게 또는 중간 이하",
+            "tip": "Rectifier 계열은 저역이 커질 수 있으므로 V30 4x12에 SM57 중심으로 잡고, 리본 마이크는 고역을 부드럽게 하는 용도로만 섞는 것이 좋습니다.",
+        }
+
+    elif drive_intensity >= 7.0 and low_tightness >= 6.5:
+        cab_detail = {
+            "cab_type": "4x12 V30 / 5150 Style",
+            "primary_mic": "SM57",
+            "secondary_mic": "MD421",
+            "mic_position": "SM57 cap edge, MD421은 body 보강용",
+            "low_cut": "75–95Hz",
+            "high_cut": "8–9kHz",
+            "room_level": "0–3%",
+            "proximity": "낮게",
+            "tip": "타이트한 모던 하이게인은 룸감보다 직선적인 다이내믹 마이크 조합이 잘 맞습니다.",
+        }
+
+    elif lead_gain_likelihood >= 7.0 or fat_lead_likelihood >= 7.0:
+        cab_detail = {
+            "cab_type": "4x12 V30 / Greenback Mix",
+            "primary_mic": "SM57",
+            "secondary_mic": "R121",
+            "mic_position": "SM57은 선명도, R121은 두께와 부드러움 보강",
+            "low_cut": "80–100Hz",
+            "high_cut": "8–10kHz",
+            "room_level": "3–8%",
+            "proximity": "중간",
+            "tip": "리드톤은 너무 건조하면 얇게 느껴질 수 있어 리본 마이크와 약한 룸감을 섞으면 좋습니다.",
+        }
+
+    elif drive_intensity >= 5.0:
+        cab_detail = {
+            "cab_type": "2x12 또는 4x12 Balanced",
+            "primary_mic": "SM57",
+            "secondary_mic": "R121",
+            "mic_position": "SM57 off-axis 또는 cap edge",
+            "low_cut": "80–100Hz",
+            "high_cut": "8.5–10kHz",
+            "room_level": "3–6%",
+            "proximity": "중간 이하",
+            "tip": "중게인 록톤은 SM57과 R121 조합으로 선명도와 두께의 균형을 잡는 것이 좋습니다.",
+        }
+
+    elif brightness >= 6.5 and drive_intensity < 4.0:
+        cab_detail = {
+            "cab_type": "2x12 Open Back",
+            "primary_mic": "Condenser",
+            "secondary_mic": "SM57 소량",
+            "mic_position": "컨덴서는 약간 거리감 있게, SM57은 선명도 보강",
+            "low_cut": "70–90Hz",
+            "high_cut": "10–12kHz",
+            "room_level": "5–12%",
+            "proximity": "낮게",
+            "tip": "밝은 클린톤은 오픈백 캐비넷과 약간의 룸감이 자연스럽습니다.",
+        }
+
+    else:
+        cab_detail = {
+            "cab_type": "1x12 또는 2x12 Vintage Open Back",
+            "primary_mic": "Ribbon",
+            "secondary_mic": "Dynamic off-axis",
+            "mic_position": "리본으로 부드럽게 받고 다이내믹은 선명도만 보강",
+            "low_cut": "75–100Hz",
+            "high_cut": "9–11kHz",
+            "room_level": "5–10%",
+            "proximity": "중간",
+            "tip": "따뜻하고 자연스러운 톤을 위해 고역이 부드러운 마이크 조합이 좋습니다.",
+        }
+
+    
     # -----------------------------
     # 6. EQ 보정 팁
     # -----------------------------
@@ -826,7 +909,146 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
 
     if upper_mid >= 7.5 and bite >= 7.0:
         eq_tips.append("상중역 어택이 강합니다. 귀에 쏘면 2~3.5kHz를 살짝 줄여보세요.")
-       
+
+    # -----------------------------
+    # 6-1. Suggested EQ Moves
+    # -----------------------------
+    suggested_eq_moves: list[dict[str, Any]] = []
+
+    # 기본 하이패스
+    if drive_intensity >= 6.5:
+        suggested_eq_moves.append({
+            "type": "High Pass",
+            "frequency": "80–100Hz",
+            "gain_db": 0,
+            "q": "-",
+            "reason": "하이게인 톤의 불필요한 초저역을 정리해 리프를 더 타이트하게 만듭니다.",
+        })
+    elif warmth >= 6.5 or body >= 6.5:
+        suggested_eq_moves.append({
+            "type": "High Pass",
+            "frequency": "70–90Hz",
+            "gain_db": 0,
+            "q": "-",
+            "reason": "저역은 유지하되 불필요한 초저역만 정리합니다.",
+        })
+    else:
+        suggested_eq_moves.append({
+            "type": "High Pass",
+            "frequency": "90–120Hz",
+            "gain_db": 0,
+            "q": "-",
+            "reason": "얇은 톤이 아니라면 초저역을 정리해 믹스에서 명료도를 확보합니다.",
+        })
+
+    # Mud 컷
+    if mud >= 7.0:
+        suggested_eq_moves.append({
+            "type": "Mud Cut",
+            "frequency": "220–320Hz",
+            "gain_db": -3.0,
+            "q": 1.1,
+            "reason": "저중역 뭉침이 강해 220–320Hz를 줄이면 답답함이 줄어듭니다.",
+        })
+    elif mud >= 5.5:
+        suggested_eq_moves.append({
+            "type": "Mud Cut",
+            "frequency": "250–350Hz",
+            "gain_db": -1.5,
+            "q": 1.0,
+            "reason": "약간의 먹먹함을 줄이기 위한 가벼운 컷입니다.",
+        })
+
+    # Body 보강
+    if body <= 3.5 and warmth <= 4.5:
+        suggested_eq_moves.append({
+            "type": "Body Boost",
+            "frequency": "450–700Hz",
+            "gain_db": 1.5,
+            "q": 0.9,
+            "reason": "톤이 얇게 느껴질 수 있어 기타 몸통감을 보강합니다.",
+        })
+
+    # Mid 보정
+    if mid_focus <= 3.5 and drive_intensity >= 4.5:
+        suggested_eq_moves.append({
+            "type": "Mid Boost",
+            "frequency": "800Hz–1.4kHz",
+            "gain_db": 2.0,
+            "q": 0.9,
+            "reason": "드라이브 톤에서 미드가 부족하면 기타가 믹스에서 묻힐 수 있습니다.",
+        })
+    elif mid_focus >= 8.0:
+        suggested_eq_moves.append({
+            "type": "Mid Cut",
+            "frequency": "900Hz–1.3kHz",
+            "gain_db": -1.5,
+            "q": 1.0,
+            "reason": "중음이 과하게 앞으로 나오면 답답하게 들릴 수 있습니다.",
+        })
+
+    # Presence 보정
+    if presence <= 3.0 and clarity <= 4.5:
+        suggested_eq_moves.append({
+            "type": "Presence Boost",
+            "frequency": "3.2–4.5kHz",
+            "gain_db": 1.5,
+            "q": 0.8,
+            "reason": "선명도와 앞으로 나오는 느낌을 보강합니다.",
+        })
+    elif presence >= 7.5 or upper_mid >= 7.5:
+        suggested_eq_moves.append({
+            "type": "Presence Cut",
+            "frequency": "2.5–4kHz",
+            "gain_db": -1.5,
+            "q": 1.1,
+            "reason": "상중역이 강해 귀에 쏘는 느낌을 줄입니다.",
+        })
+
+    # Fizz / High Cut
+    if fizz >= 7.0:
+        suggested_eq_moves.append({
+            "type": "High Cut",
+            "frequency": "7–8kHz",
+            "gain_db": 0,
+            "q": "-",
+            "reason": "하이게인 fizz와 지글거림을 줄입니다.",
+        })
+    elif brightness >= 7.0:
+        suggested_eq_moves.append({
+            "type": "High Cut",
+            "frequency": "8.5–10kHz",
+            "gain_db": 0,
+            "q": "-",
+            "reason": "밝은 톤의 고역을 과하게 죽이지 않고 정리합니다.",
+        })
+    else:
+        suggested_eq_moves.append({
+            "type": "High Cut",
+            "frequency": "9–12kHz",
+            "gain_db": 0,
+            "q": "-",
+            "reason": "자연스러운 고역 정리용 기본 하이컷입니다.",
+        })
+
+    # Rectifier 특화 보정
+    if rectifier_likelihood >= 6.2:
+        suggested_eq_moves.append({
+            "type": "Rectifier Tightening",
+            "frequency": "120–180Hz",
+            "gain_db": -1.5,
+            "q": 0.9,
+            "reason": "Rectifier 계열의 큰 저역을 살짝 조여 리프를 더 단단하게 만듭니다.",
+        })
+        suggested_eq_moves.append({
+            "type": "Rectifier Mid Support",
+            "frequency": "700Hz–1kHz",
+            "gain_db": 1.0,
+            "q": 0.8,
+            "reason": "미드가 너무 빠져 기타가 묻히지 않도록 살짝 보강합니다.",
+        })
+
+    
     # -----------------------------
     # 7. 공간계 추천
     # -----------------------------
@@ -975,6 +1197,95 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
         "double_tracking": double_tracking,
         "modulation": modulation_recommendation,
         "delay": delay_recommendation,
+    }
+
+    
+    # -----------------------------
+    # 7-2. FM3 Preset Guide Data
+    # -----------------------------
+    fm3_preset_guide = {
+        "preset_name": f"ToneScope - {tone_type}",
+        "grid": [
+            "Input 1",
+            "Noise Gate",
+            "Drive 1",
+            "Amp 1",
+            "Cab 1",
+            "Mod 1",
+            "Delay 1",
+            "Reverb 1",
+            "Output 1",
+        ],
+        "blocks": {
+            "input_gate": {
+                "type": "Input Gate",
+                "threshold": "-60dB" if drive_intensity < 5.0 else "-52dB",
+                "ratio": 2.0 if drive_intensity < 5.0 else 3.0,
+                "attack": "Fast",
+                "release": "80ms" if drive_intensity >= 6.5 else "120ms",
+                "tip": "하이게인일수록 게이트를 조금 더 강하게 설정합니다.",
+            },
+            "drive": {
+                "model": drive["type"],
+                "model_examples": drive.get("model_examples", []),
+                "drive": drive.get("drive", 0),
+                "tone": drive.get("tone", 5),
+                "level": drive.get("level", 5),
+                "purpose": drive.get("purpose", ""),
+            },
+            "amp": {
+                "family": amp_family,
+                "model": amp_model,
+                "examples": amp_examples,
+                "gain": amp_settings.get("gain", 5),
+                "bass": amp_settings.get("bass", 5),
+                "mid": amp_settings.get("mid", 5),
+                "treble": amp_settings.get("treble", 5),
+                "presence": amp_settings.get("presence", 5),
+                "master": amp_settings.get("master", 5),
+                "tip": amp_reason,
+            },
+            "cab": {
+                "cab": cabinet["cab"],
+                "mic": cabinet["mic"],
+                "cab_type": cab_detail["cab_type"],
+                "primary_mic": cab_detail["primary_mic"],
+                "secondary_mic": cab_detail["secondary_mic"],
+                "mic_position": cab_detail["mic_position"],
+                "low_cut": cab_detail["low_cut"],
+                "high_cut": cab_detail["high_cut"],
+                "room_level": cab_detail["room_level"],
+                "proximity": cab_detail["proximity"],
+                "tip": cab_detail["tip"],
+            },
+            "eq": suggested_eq_moves,
+            "modulation": {
+                "effect": effects_recommendation["modulation"]["effect"],
+                "mix": effects_recommendation["modulation"]["mix"],
+                "rate": effects_recommendation["modulation"]["rate"],
+                "depth": effects_recommendation["modulation"]["depth"],
+                "tip": effects_recommendation["modulation"]["tip"],
+            },
+            "delay": {
+                "type": effects_recommendation["delay"]["type"],
+                "mix": effects_recommendation["delay"]["mix"],
+                "time": effects_recommendation["delay"]["time"],
+                "feedback": effects_recommendation["delay"]["feedback"],
+                "tip": effects_recommendation["delay"]["tip"],
+            },
+            "reverb": {
+                "type": ambience_recommendation["reverb"],
+                "mix": ambience_recommendation["reverb_mix"],
+                "delay": ambience_recommendation["delay"],
+                "delay_mix": ambience_recommendation["delay_mix"],
+                "tip": ambience_recommendation["tip"],
+            },
+        },
+        "notes": [
+            "이 프리셋 가이드는 FM3에 바로 import하는 .syx 파일이 아니라, FM3-Edit에서 따라 만들기 위한 세팅 가이드입니다.",
+            "실제 기타, 픽업, IR, 모니터 환경에 따라 미세 조정이 필요합니다.",
+            "처음에는 Amp / Cab / Drive 순서로 맞추고, 그 다음 Delay / Reverb / Mod를 조정하는 것을 추천합니다.",
+        ],
     }
     
     # -----------------------------
@@ -1133,8 +1444,11 @@ def recommend_tone(analysis: dict[str, Any]) -> dict[str, Any]:
         "drive": drive,
         "amp_settings": amp_settings,
         "cabinet": cabinet,
+        "cab_detail": cab_detail,
         "ambience": ambience_recommendation,
         "effects_recommendation": effects_recommendation,
+        "suggested_eq_moves": suggested_eq_moves,
+        "fm3_preset_guide": fm3_preset_guide,
         "eq_tips": eq_tips,
         "chain": chain,
         "notes": [
