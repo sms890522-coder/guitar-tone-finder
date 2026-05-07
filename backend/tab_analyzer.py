@@ -252,7 +252,8 @@ def analyze_tab(path: str) -> dict[str, Any]:
         segment_f0 = f0[frame_idx]
         segment_prob = voiced_prob[frame_idx] if voiced_prob is not None else np.ones_like(segment_f0)
     
-       freq, confidence = _stable_pitch_from_segment(
+
+        freq, confidence = _stable_pitch_from_segment(
             segment_f0,
             segment_prob,
             min_confidence=0.45,
@@ -597,7 +598,12 @@ def _estimate_tempo_and_bar_length(y: np.ndarray, sr: int, hop_length: int = 512
     """
     try:
         tempo, _ = librosa.beat.beat_track(y=y, sr=sr, hop_length=hop_length)
-        bpm = float(tempo)
+
+        if isinstance(tempo, np.ndarray):
+            bpm = float(tempo[0]) if tempo.size > 0 else 120.0
+        else:
+            bpm = float(tempo)
+            
     except Exception:
         bpm = 120.0
 
