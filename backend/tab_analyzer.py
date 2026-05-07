@@ -190,6 +190,8 @@ def analyze_tab(path: str) -> dict[str, Any]:
         hop_length=hop_length,
         units="frames",
         backtrack=True,
+        delta=0.18,
+        wait=3,
     )
 
     onset_times = librosa.frames_to_time(onset_frames, sr=sr, hop_length=hop_length)
@@ -210,66 +212,97 @@ def analyze_tab(path: str) -> dict[str, Any]:
         onset_times = np.arange(0, duration, 0.5)
 
     notes: list[dict[str, Any]] = []
-
+    previous_position: dict[str, Any] | None = None
+    
     for index, start_time in enumerate(onset_times):
-        end_time = onset_times[index + 1] if index + 1 < len(onset_times) else min(duration, start_time + 0.6)
-
-        if end_time - start_time < 0.06:
+        end_time = onset_times[index + 1] if index + 1 < len(onset_times) else min(duration, start_time + 0.75)
+    
+        note_duration = float(end_time - start_time)
+    
+        # 너무 짧은 구간은 스킵
+        if note_duration < 0.07:
             continue
-
+    
         frame_idx = np.where((frame_times >= start_time) & (frame_times < end_time))[0]
-
+    
         if len(frame_idx) == 0:
             continue
-
+    
         segment_f0 = f0[frame_idx]
         segment_prob = voiced_prob[frame_idx] if voiced_prob is not None else np.ones_like(segment_f0)
-
-        valid = np.where(~np.isnan(segment_f0))[0]
-
-        if len(valid) == 0:
+    
+        freq, confidence = _stable_pitch_from_segment(
+            segment_f0,
+            segment_prob,
+            min_confidence=0.55,
+        )
+    
+        if freq is None:
             continue
-
-        valid_f0 = segment_f0[valid]
-        valid_prob = segment_prob[valid]
-
-        # 너무 불확실한 구간 제외
-        confidence = float(np.nanmedian(valid_prob))
-        if confidence < 0.45:
+    
+        if confidence < 0.50:
             continue
-
-        freq = float(np.nanmedian(valid_f0))
+    
         midi = _hz_to_midi(freq)
-
+    
         if midi is None:
             continue
-
-        position = _midi_to_tab_position(midi, preferred_position=5, max_fret=22)
-
+    
+        position = _midi_to_tab_position_with_context(
+            midi,
+            previous_position=previous_position,
+            preferred_position=5,
+            max_fret=22,
+        )
+    
         if position is None:
             continue
-
-        notes.append(
-            {
-                "start": round(float(start_time), 3),
-                "end": round(float(end_time), 3),
-                "duration": round(float(end_time - start_time), 3),
-                "frequency": round(freq, 2),
-                "midi": midi,
-                "note": _midi_to_note_name(midi),
-                "string": position["string"],
-                "fret": position["fret"],
-                "confidence": round(_clamp(confidence), 2),
-            }
+    
+        note = {
+            "start": round(float(start_time), 3),
+            "end": round(float(end_time), 3),
+            "duration": round(note_duration, 3),
+            "frequency": round(freq, 2),
+            "midi": midi,
+            "note": _midi_to_note_name(midi),
+            "string": position["string"],
+            "fret": position["fret"],
+            "confidence": round(_clamp(confidence), 2),
+        }
+    
+        notes.append(note)
+        previous_position = position
+        
+    notes = _remove_tiny_glitches(notes)
+    notes = _smooth_octave_errors(notes)
+    
+    # 옥타브 보정 후 줄/프렛 다시 계산
+    repositioned_notes: list[dict[str, Any]] = []
+    previous_position = None
+    
+    for note in notes:
+        position = _midi_to_tab_position_with_context(
+            note["midi"],
+            previous_position=previous_position,
+            preferred_position=5,
+            max_fret=22,
         )
-
-    notes = _merge_repeated_notes(notes)
-
-    # 너무 많은 음이면 앞쪽 80개까지만
-    notes = notes[:80]
-
+    
+        if position is None:
+            continue
+    
+        note["string"] = position["string"]
+        note["fret"] = position["fret"]
+        repositioned_notes.append(note)
+        previous_position = position
+    
+    notes = _merge_repeated_notes(repositioned_notes, min_gap=0.10)
+    notes = _remove_tiny_glitches(notes)
+    
+    # 너무 많은 음이면 앞쪽 100개까지만
+    notes = notes[:100]
+    
     tab = _build_ascii_tab(notes)
-
     confidence_avg = round(float(np.mean([n["confidence"] for n in notes])) if notes else 0.0, 2)
 
     warnings: list[str] = []
@@ -284,7 +317,7 @@ def analyze_tab(path: str) -> dict[str, Any]:
         warnings.append("피치 추정 신뢰도가 낮습니다. 디스토션, 코드, 배경 악기가 많으면 부정확할 수 있습니다.")
 
     return {
-        "version": "tab-draft-v1",
+        "version": "tab-draft-v2",
         "duration": round(duration, 2),
         "tuning": "Standard EADGBE",
         "note_count": len(notes),
@@ -292,5 +325,169 @@ def analyze_tab(path: str) -> dict[str, Any]:
         "tab": tab,
         "notes": notes,
         "warnings": warnings,
+        "debug": {
+            "onset_count": int(len(onset_times)),
+            "raw_note_count": int(len(notes)),
+            "pitch_method": "librosa.pyin + stable segment median",
+            "position_strategy": "context aware preferred position 5",
+        },
         "disclaimer": "이 타브는 단음 리프/멜로디를 오디오에서 추정한 초안입니다. 코드, 벤딩, 비브라토, 빠른 솔로는 정확하지 않을 수 있습니다.",
     }
+
+def _stable_pitch_from_segment(
+    f0_values: np.ndarray,
+    prob_values: np.ndarray,
+    min_confidence: float = 0.55,
+) -> tuple[float | None, float]:
+    """
+    한 음 구간에서 안정적인 pitch만 골라 대표 주파수를 반환.
+    pyin 결과에는 흔들리는 값이 많아서 전체 median보다 안정 구간만 쓰는 게 낫다.
+    """
+    if len(f0_values) == 0:
+        return None, 0.0
+
+    valid = np.where((~np.isnan(f0_values)) & (prob_values >= min_confidence))[0]
+
+    if len(valid) < 2:
+        valid = np.where(~np.isnan(f0_values))[0]
+
+    if len(valid) == 0:
+        return None, 0.0
+
+    valid_f0 = f0_values[valid]
+    valid_prob = prob_values[valid]
+
+    midi_values = []
+    for freq in valid_f0:
+        midi = _hz_to_midi(float(freq))
+        if midi is not None:
+            midi_values.append(midi)
+
+    if not midi_values:
+        return None, 0.0
+
+    # 가장 많이 나온 MIDI 음을 대표 pitch로 사용
+    midi_array = np.array(midi_values)
+    unique, counts = np.unique(midi_array, return_counts=True)
+    dominant_midi = int(unique[np.argmax(counts)])
+
+    # dominant midi 주변 주파수만 다시 모음
+    selected_freqs = []
+    selected_probs = []
+
+    for freq, prob in zip(valid_f0, valid_prob):
+        midi = _hz_to_midi(float(freq))
+        if midi is not None and abs(midi - dominant_midi) <= 1:
+            selected_freqs.append(float(freq))
+            selected_probs.append(float(prob))
+
+    if not selected_freqs:
+        return None, 0.0
+
+    confidence = float(np.median(selected_probs))
+    freq = float(np.median(selected_freqs))
+
+    return freq, confidence
+
+
+def _midi_to_tab_position_with_context(
+    midi: int,
+    previous_position: dict[str, Any] | None = None,
+    preferred_position: int = 5,
+    max_fret: int = 22,
+) -> dict[str, Any] | None:
+    """
+    이전 음의 줄/프렛과 가까운 위치를 선호해서 타브가 튀지 않게 만든다.
+    """
+    candidates = []
+
+    string_index_map = {name: index for index, name in enumerate(STRING_ORDER)}
+
+    for string_name, open_midi in STANDARD_TUNING.items():
+        fret = midi - open_midi
+
+        if 0 <= fret <= max_fret:
+            position_penalty = abs(fret - preferred_position) * 0.55
+            open_string_penalty = 1.2 if fret == 0 else 0.0
+            high_fret_penalty = 0.6 if fret >= 17 else 0.0
+
+            context_penalty = 0.0
+
+            if previous_position:
+                prev_string = previous_position.get("string")
+                prev_fret = previous_position.get("fret")
+
+                if prev_string in string_index_map and isinstance(prev_fret, int):
+                    string_jump = abs(string_index_map[string_name] - string_index_map[prev_string])
+                    fret_jump = abs(fret - prev_fret)
+
+                    context_penalty = string_jump * 0.8 + fret_jump * 0.25
+
+            score = position_penalty + open_string_penalty + high_fret_penalty + context_penalty
+
+            candidates.append(
+                {
+                    "string": string_name,
+                    "fret": fret,
+                    "score": score,
+                }
+            )
+
+    if not candidates:
+        return None
+
+    candidates.sort(key=lambda item: item["score"])
+
+    return {
+        "string": candidates[0]["string"],
+        "fret": candidates[0]["fret"],
+    }
+
+
+def _remove_tiny_glitches(notes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """
+    너무 짧고 신뢰도 낮은 음 제거.
+    """
+    cleaned = []
+
+    for note in notes:
+        duration = float(note.get("duration", 0.0))
+        confidence = float(note.get("confidence", 0.0))
+
+        if duration < 0.08 and confidence < 0.72:
+            continue
+
+        cleaned.append(note)
+
+    return cleaned
+
+
+def _smooth_octave_errors(notes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """
+    pyin이 가끔 한 옥타브 위/아래로 튀는 문제 완화.
+    앞뒤 음과 비교해서 12반음 차이로 갑자기 튀면 보정.
+    """
+    if len(notes) < 3:
+        return notes
+
+    smoothed = [dict(note) for note in notes]
+
+    for i in range(1, len(smoothed) - 1):
+        prev_midi = smoothed[i - 1]["midi"]
+        curr_midi = smoothed[i]["midi"]
+        next_midi = smoothed[i + 1]["midi"]
+
+        # 현재 음만 한 옥타브 튄 경우
+        if abs(curr_midi - prev_midi) >= 11 and abs(curr_midi - next_midi) >= 11:
+            down = curr_midi - 12
+            up = curr_midi + 12
+
+            if abs(down - prev_midi) < abs(curr_midi - prev_midi) and 40 <= down <= 88:
+                smoothed[i]["midi"] = down
+            elif abs(up - prev_midi) < abs(curr_midi - prev_midi) and 40 <= up <= 88:
+                smoothed[i]["midi"] = up
+
+            smoothed[i]["note"] = _midi_to_note_name(smoothed[i]["midi"])
+
+    return smoothed
+
