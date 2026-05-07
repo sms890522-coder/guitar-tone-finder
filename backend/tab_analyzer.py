@@ -116,10 +116,15 @@ def _merge_repeated_notes(notes: list[dict[str, Any]], min_gap: float = 0.08) ->
     return merged
 
 
-def _build_ascii_tab(notes: list[dict[str, Any]], max_width: int = 96) -> str:
+def _build_ascii_tab(
+    notes: list[dict[str, Any]],
+    bar_duration: float | None = None,
+    chars_per_second: int = 8,
+    max_width: int = 160,
+) -> str:
     """
-    간단한 텍스트 타브 생성.
-    시간 간격을 대략적인 칸 간격으로 변환한다.
+    텍스트 타브 생성.
+    bar_duration이 있으면 4/4 기준 마디선을 추가한다.
     """
 
     if not notes:
@@ -128,25 +133,40 @@ def _build_ascii_tab(notes: list[dict[str, Any]], max_width: int = 96) -> str:
     total_duration = max(note["end"] for note in notes)
     total_duration = max(total_duration, 1.0)
 
-    # 너무 긴 파일은 가독성을 위해 너비 제한
-    width = min(max_width, max(32, int(total_duration * 8)))
+    width = min(max_width, max(40, int(total_duration * chars_per_second)))
 
     lines = {s: ["-"] * width for s in STRING_ORDER}
 
+    # 마디선 추가
+    if bar_duration and bar_duration > 0:
+        bar_time = 0.0
+
+        while bar_time < total_duration:
+            col = int((bar_time / total_duration) * (width - 1))
+            col = max(0, min(width - 1, col))
+
+            for s in STRING_ORDER:
+                lines[s][col] = "|"
+
+            bar_time += bar_duration
+
+    # 음표 추가
     for note in notes:
         string_name = note["string"]
         fret_text = str(note["fret"])
 
-        col = int((note["start"] / total_duration) * (width - 2))
+        col = int((note["start"] / total_duration) * (width - 1))
         col = max(0, min(width - len(fret_text), col))
 
-        # 프렛 숫자 삽입
         for i, char in enumerate(fret_text):
             if col + i < width:
                 lines[string_name][col + i] = char
 
-    return "\n".join([f"{s}|{''.join(lines[s])}|" for s in STRING_ORDER])
+    # 끝 마디선
+    for s in STRING_ORDER:
+        lines[s][-1] = "|"
 
+    return "\n".join([f"{s}|{''.join(lines[s])}" for s in STRING_ORDER])
 
 def analyze_tab(path: str) -> dict[str, Any]:
     """
@@ -181,6 +201,8 @@ def analyze_tab(path: str) -> dict[str, Any]:
 
     hop_length = 512
 
+    tempo_profile = _estimate_tempo_and_bar_length(y=y, sr=sr, hop_length=hop_length)
+    
     # onset으로 음 시작점 감지
     onset_env = librosa.onset.onset_strength(y=y, sr=sr, hop_length=hop_length)
     onset_frames = librosa.onset.onset_detect(
@@ -298,8 +320,12 @@ def analyze_tab(path: str) -> dict[str, Any]:
     # 너무 많은 음이면 앞쪽 120개까지만
     notes = notes[:120]
     
-    tab = _build_ascii_tab(notes)
-
+    tab = _build_ascii_tab(
+        notes,
+        bar_duration=tempo_profile["bar_duration"],
+        chars_per_second=8,
+        max_width=160,
+    )
 
     confidence_avg = round(float(np.mean([n["confidence"] for n in notes])) if notes else 0.0, 2)
 
@@ -318,6 +344,7 @@ def analyze_tab(path: str) -> dict[str, Any]:
         "version": "tab-draft-v3",
         "duration": round(duration, 2),
         "tuning": "Standard EADGBE",
+        "tempo": tempo_profile,
         "note_count": len(notes),
         "confidence": confidence_avg,
         "tab": tab,
@@ -560,4 +587,32 @@ def _estimate_best_position(
             best_center = center
 
     return int(best_center)
+
+
+def _estimate_tempo_and_bar_length(y: np.ndarray, sr: int, hop_length: int = 512) -> dict[str, Any]:
+    """
+    간단한 템포 추정.
+    4/4 기준으로 한 마디 길이를 계산한다.
+    정확한 BPM 분석이라기보다는 타브 가독성을 위한 보조값이다.
+    """
+    try:
+        tempo, _ = librosa.beat.beat_track(y=y, sr=sr, hop_length=hop_length)
+        bpm = float(tempo)
+    except Exception:
+        bpm = 120.0
+
+    if math.isnan(bpm) or math.isinf(bpm) or bpm <= 40 or bpm >= 240:
+        bpm = 120.0
+
+    beat_duration = 60.0 / bpm
+    bar_duration = beat_duration * 4.0
+
+    return {
+        "bpm": round(bpm, 1),
+        "time_signature": "4/4",
+        "beat_duration": round(beat_duration, 3),
+        "bar_duration": round(bar_duration, 3),
+    }
+
+
 
