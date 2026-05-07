@@ -60,7 +60,7 @@ type Recommendation = {
     name: string;
     score: number;
     reason: string
-  }>
+  }>;
   amp_reason: string;
   drive: {
     type: string;
