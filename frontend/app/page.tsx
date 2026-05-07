@@ -306,7 +306,8 @@ export default function Home() {
   const [tabResult, setTabResult] = useState<TabResult | null>(null);
   const [tabLoading, setTabLoading] = useState(false);
   const [tabError, setTabError] = useState('');
-
+  const [tabProgress, setTabProgress] = useState(0);
+  
   useEffect(() => {
     const API_BASE_URL = 'https://guitar-tone-finder-api.onrender.com';
 
@@ -396,6 +397,18 @@ export default function Home() {
     setTabLoading(true);
     setTabError('');
     setTabResult(null);
+    setTabProgress(0);
+  
+    let tabProgressTimer: ReturnType<typeof setInterval> | null = null;
+  
+    tabProgressTimer = setInterval(() => {
+      setTabProgress((prev) => {
+        if (prev < 45) return prev + 5;
+        if (prev < 75) return prev + 3;
+        if (prev < 93) return prev + 1;
+        return prev;
+      });
+    }, 450);
   
     const formData = new FormData();
     formData.append('file', file);
@@ -416,11 +429,19 @@ export default function Home() {
         throw new Error(data.detail || '타브 분석에 실패했습니다.');
       }
   
+      setTabProgress(100);
       setTabResult(data);
     } catch (err) {
       setTabError(err instanceof Error ? err.message : '알 수 없는 오류가 발생했습니다.');
     } finally {
-      setTabLoading(false);
+      if (tabProgressTimer) {
+        clearInterval(tabProgressTimer);
+      }
+  
+      setTimeout(() => {
+        setTabLoading(false);
+        setTabProgress(0);
+      }, 500);
     }
   }
 
@@ -556,6 +577,29 @@ export default function Home() {
                   >
                     {tabLoading ? '타브 생성 중...' : '타브 초안 만들기'}
                   </button>
+                  {tabLoading && (
+                    <div className="mt-4 rounded-2xl bg-white/5 p-4">
+                      <div className="mb-2 flex items-center justify-between text-xs text-slate-300">
+                        <span>
+                          {tabProgress < 35
+                            ? '피치 분석 중...'
+                            : tabProgress < 70
+                              ? '음표와 프렛 위치 계산 중...'
+                              : tabProgress < 95
+                                ? '타브 마디 정리 중...'
+                                : 'TXT 파일 준비 중...'}
+                        </span>
+                        <span className="font-bold">{tabProgress}%</span>
+                      </div>
+                  
+                      <div className="h-3 overflow-hidden rounded-full bg-slate-800">
+                        <div
+                          className="meter-bg h-full rounded-full transition-all duration-500"
+                          style={{ width: `${tabProgress}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
           
                 {tabError && (
