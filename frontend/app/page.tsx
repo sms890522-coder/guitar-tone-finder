@@ -179,6 +179,12 @@ type TabAnalysis = {
   version: string;
   duration: number;
   tuning: string;
+  tempo?: {
+    bpm: number;
+    time_signature: string;
+    beat_duration: number;
+    bar_duration: number;
+  };
   note_count: number;
   confidence: number;
   tab: string;
@@ -186,7 +192,6 @@ type TabAnalysis = {
   warnings: string[];
   disclaimer: string;
 };
-
 type TabResult = {
   ok: boolean;
   filename: string;
@@ -1394,6 +1399,9 @@ ${tab.tuning}
 Duration:
 ${tab.duration}s
 
+Tempo:
+${tab.tempo ? `${tab.tempo.bpm} BPM / ${tab.tempo.time_signature}` : 'N/A'}
+
 Detected Notes:
 ${tab.note_count}
 
@@ -1466,25 +1474,29 @@ function TabPanel({ tabResult }: { tabResult: TabResult }) {
           타브 TXT 다운로드
         </button>
       </div>
-
-      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+      <div className="mt-4 grid gap-3 sm:grid-cols-4">
         <div className="rounded-xl bg-white/5 p-3">
           <p className="text-xs text-slate-400">Tuning</p>
           <p className="font-bold">{tab.tuning}</p>
         </div>
-
+      
+        <div className="rounded-xl bg-white/5 p-3">
+          <p className="text-xs text-slate-400">Tempo</p>
+          <p className="font-bold">
+            {tab.tempo ? `${tab.tempo.bpm} BPM` : 'N/A'}
+          </p>
+        </div>
+      
         <div className="rounded-xl bg-white/5 p-3">
           <p className="text-xs text-slate-400">Notes</p>
           <p className="font-bold">{tab.note_count}</p>
         </div>
-
+      
         <div className="rounded-xl bg-white/5 p-3">
           <p className="text-xs text-slate-400">Confidence</p>
           <p className="font-bold">{Math.round((tab.confidence || 0) * 100)}%</p>
         </div>
       </div>
-
-
       {tab.warnings.length > 0 && (
         <div className="mt-4 rounded-xl bg-amber-400/10 p-4 text-sm leading-6 text-amber-100">
           {tab.warnings.map((warning) => (
