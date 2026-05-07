@@ -1320,20 +1320,107 @@ function ScoreBar({ title, desc, value }: { title: string; desc: string; value: 
 }
 
 
+function buildTabDraftText(tabResult: TabResult) {
+  const tab = tabResult.tab_analysis;
+
+  const detectedNotes = tab.notes
+    .map(
+      (note, index) =>
+        `${index + 1}. ${note.start}s - ${note.note} - ${note.string} string / fret ${note.fret} - confidence ${Math.round(
+          note.confidence * 100
+        )}%`
+    )
+    .join('\n');
+
+  const warnings =
+    tab.warnings && tab.warnings.length > 0
+      ? tab.warnings.map((warning) => `- ${warning}`).join('\n')
+      : '- 없음';
+
+  return `
+ToneScope AI - Tab Draft
+========================
+
+File:
+${tabResult.filename}
+
+Tuning:
+${tab.tuning}
+
+Duration:
+${tab.duration}s
+
+Detected Notes:
+${tab.note_count}
+
+Confidence:
+${Math.round((tab.confidence || 0) * 100)}%
+
+Disclaimer:
+${tab.disclaimer}
+
+
+Estimated Tab
+-------------
+${tab.tab}
+
+
+Detected Notes
+--------------
+${detectedNotes || '감지된 음이 없습니다.'}
+
+
+Warnings
+--------
+${warnings}
+`.trim();
+}
+
+function downloadTabDraft(tabResult: TabResult) {
+  const text = buildTabDraftText(tabResult);
+  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+
+  const safeName =
+    tabResult.filename
+      ?.toLowerCase()
+      .replace(/\.[^/.]+$/, '')
+      .replaceAll(' ', '-')
+      .replace(/[^a-z0-9가-힣-]/gi, '') || 'tab-draft';
+
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `${safeName}-tab-draft.txt`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+
+  URL.revokeObjectURL(url);
+}
+
+
+
 function TabPanel({ tabResult }: { tabResult: TabResult }) {
   const tab = tabResult.tab_analysis;
+  const previewLines = tab.tab.split('\n').slice(0, 6).join('\n');
 
   return (
     <div className="mt-5 rounded-2xl bg-slate-950/60 p-4">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-xs uppercase text-slate-400">Estimated Tab</p>
-          <h4 className="font-black">단음 리프 타브 초안</h4>
+          <h4 className="font-black">단음 리프 타브 초안 생성 완료</h4>
+          <p className="mt-1 text-xs leading-5 text-slate-400">
+            모바일에서는 전체 타브가 길게 보일 수 있어 TXT 파일 다운로드를 추천합니다.
+          </p>
         </div>
 
-        <div className="rounded-full bg-white px-3 py-1 text-xs font-black text-slate-950">
-          Confidence {Math.round((tab.confidence || 0) * 100)}%
-        </div>
+        <button
+          onClick={() => downloadTabDraft(tabResult)}
+          className="rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-950 transition hover:scale-[1.02]"
+        >
+          타브 TXT 다운로드
+        </button>
       </div>
 
       <div className="mt-4 grid gap-3 sm:grid-cols-3">
@@ -1341,33 +1428,18 @@ function TabPanel({ tabResult }: { tabResult: TabResult }) {
           <p className="text-xs text-slate-400">Tuning</p>
           <p className="font-bold">{tab.tuning}</p>
         </div>
+
         <div className="rounded-xl bg-white/5 p-3">
           <p className="text-xs text-slate-400">Notes</p>
           <p className="font-bold">{tab.note_count}</p>
         </div>
+
         <div className="rounded-xl bg-white/5 p-3">
-          <p className="text-xs text-slate-400">Duration</p>
-          <p className="font-bold">{tab.duration}s</p>
+          <p className="text-xs text-slate-400">Confidence</p>
+          <p className="font-bold">{Math.round((tab.confidence || 0) * 100)}%</p>
         </div>
       </div>
 
-      <pre className="mt-4 overflow-x-auto rounded-xl bg-black/50 p-4 font-mono text-xs leading-6 text-emerald-100">
-        {tab.tab}
-      </pre>
-
-      {tab.notes.length > 0 && (
-        <div className="mt-4 rounded-xl bg-white/5 p-4">
-          <p className="text-xs uppercase text-slate-400">Detected Notes</p>
-          <div className="mt-3 max-h-56 overflow-y-auto text-xs leading-6 text-slate-300">
-            {tab.notes.map((note, index) => (
-              <p key={`${note.start}-${index}`}>
-                {index + 1}. {note.start}s · {note.note} · {note.string} string / fret {note.fret} · confidence{' '}
-                {Math.round(note.confidence * 100)}%
-              </p>
-            ))}
-          </div>
-        </div>
-      )}
 
       {tab.warnings.length > 0 && (
         <div className="mt-4 rounded-xl bg-amber-400/10 p-4 text-sm leading-6 text-amber-100">
@@ -1377,9 +1449,7 @@ function TabPanel({ tabResult }: { tabResult: TabResult }) {
         </div>
       )}
 
-      <p className="mt-4 text-xs leading-5 text-slate-400">
-        {tab.disclaimer}
-      </p>
+      <p className="mt-4 text-xs leading-5 text-slate-400">{tab.disclaimer}</p>
     </div>
   );
 }
