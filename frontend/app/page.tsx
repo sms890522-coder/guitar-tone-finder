@@ -2,6 +2,11 @@
 
 import { useEffect, useMemo, useState } from 'react';
 
+type GlobalStats = {
+  tone_analysis: number;
+  tab_generation: number;
+};
+
 type Scores = {
   gain: number;
   brightness: number;
@@ -316,7 +321,22 @@ export default function Home() {
   const [tabQueuePosition, setTabQueuePosition] = useState<number | null>(null);
   const [jobStatus, setJobStatus] = useState('');
   const [tabJobStatus, setTabJobStatus] = useState('');
+  const [globalStats, setGlobalStats] = useState<GlobalStats | null>(null);
+
+  async function fetchGlobalStats() {
+    try {
+      const API_BASE_URL = 'https://guitar-tone-finder-api.onrender.com';
   
+      const response = await fetch(`${API_BASE_URL}/stats`);
+      const data = await response.json();
+  
+      if (response.ok && data.stats) {
+        setGlobalStats(data.stats);
+      }
+    } catch (error) {
+      console.log('Stats fetch failed:', error);
+    }
+  }
   useEffect(() => {
     const API_BASE_URL = 'https://guitar-tone-finder-api.onrender.com';
 
@@ -327,6 +347,7 @@ export default function Home() {
       .catch((error) => {
         console.log('Backend wake-up failed:', error);
       });
+    fetchGlobalStats();
   }, []);
   const previewUrl = useMemo(() => (file ? URL.createObjectURL(file) : ''), [file]);
 
@@ -540,10 +561,28 @@ export default function Home() {
             </div>
           </div>
           <div className="rounded-full border border-white/10 px-4 py-2 text-xs text-slate-300">
-            MVP v2 · Improved Analysis
+            MVP v3 · Improved Analysis
           </div>
         </nav>
 
+        {globalStats && (
+          <div className="mb-6 grid gap-3 sm:grid-cols-3">
+            <div className="rounded-2xl bg-white/5 p-4 ring-1 ring-white/10">
+              <p className="text-xs text-slate-400">총 톤 분석</p>
+              <p className="mt-1 text-2xl font-black">
+                {globalStats.tone_analysis.toLocaleString()}
+              </p>
+            </div>
+        
+            <div className="rounded-2xl bg-white/5 p-4 ring-1 ring-white/10">
+              <p className="text-xs text-slate-400">총 타브 생성</p>
+              <p className="mt-1 text-2xl font-black">
+                {globalStats.tab_generation.toLocaleString()}
+              </p>
+            </div>
+          </div>
+        )}
+        
         <div className="grid gap-6 lg:grid-cols-[1.05fr_.95fr]">
           <section className="glass rounded-[2rem] p-6 shadow-2xl md:p-9">
             <div className="mb-7 inline-flex rounded-full bg-indigo-400/10 px-4 py-2 text-sm text-indigo-200 ring-1 ring-indigo-300/20">
