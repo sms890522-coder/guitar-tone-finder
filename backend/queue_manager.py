@@ -13,8 +13,20 @@ queue: asyncio.Queue[str] = asyncio.Queue()
 MAX_QUEUE_SIZE = 20
 
 
+def get_all_queued_job_ids() -> list[str]:
+    queued = [
+        (job_id, job)
+        for job_id, job in jobs.items()
+        if job.get("status") == "queued"
+    ]
+
+    queued.sort(key=lambda item: float(item[1].get("created_at", 0)))
+
+    return [job_id for job_id, _ in queued]
+
+
 def create_job(job_type: str, payload: dict[str, Any]) -> str:
-    if queue.qsize() >= MAX_QUEUE_SIZE:
+    if len(get_all_queued_job_ids()) >= MAX_QUEUE_SIZE:
         raise RuntimeError("현재 대기열이 가득 찼습니다. 잠시 후 다시 시도해 주세요.")
 
     job_id = str(uuid.uuid4())
@@ -87,13 +99,4 @@ async def worker_loop(
         finally:
             queue.task_done()
             cleanup_old_jobs()
-
-
-
-def get_all_queued_job_ids() -> list[str]:
-    return [
-        job_id
-        for job_id, job in jobs.items()
-        if job.get("status") == "queued"
-    ]
-
+            
