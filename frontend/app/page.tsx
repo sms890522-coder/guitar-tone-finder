@@ -401,6 +401,7 @@ export default function Home() {
     const resultData = await pollAnalyzeJob(queued.job_id);
     setProgress(100);
     setResult(resultData);  
+    fetchGlobalStats();
     } catch (err) {
       setError(err instanceof Error ? err.message : '알 수 없는 오류가 발생했습니다.');
     } finally {
@@ -457,8 +458,9 @@ export default function Home() {
    );
     
     const tabData = await pollTabJob(queued.job_id); 
-      setTabProgress(100);
-      setTabResult(tabData);
+    setTabProgress(100);
+    setTabResult(tabData);
+    fetchGlobalStats();
     } catch (err) {
       setTabError(err instanceof Error ? err.message : '알 수 없는 오류가 발생했습니다.');
     } finally {
@@ -490,12 +492,16 @@ export default function Home() {
           setProgress(typeof data.progress === 'number' ? data.progress : 0);
           setJobStatus(data.status || '');
   
-          setQueuePosition(
-            typeof data.queue_position === 'number' && data.queue_position > 0
-              ? data.queue_position
-              : null
-          );
-  
+          if (data.status === 'queued') {
+            setQueuePosition(
+              typeof data.queue_position === 'number' && data.queue_position > 0
+                ? data.queue_position
+                : 1
+            );
+          } else if (data.status === 'processing') {
+            setQueuePosition(null);
+          }  
+          
           if (data.status === 'done') {
             if (timer) clearInterval(timer);
             setQueuePosition(null);
@@ -537,11 +543,15 @@ export default function Home() {
           setTabProgress(typeof data.progress === 'number' ? data.progress : 0);
           setTabJobStatus(data.status || '');
   
-          setTabQueuePosition(
-            typeof data.queue_position === 'number' && data.queue_position > 0
-              ? data.queue_position
-              : null
-          );
+          if (data.status === 'queued') {
+            setTabQueuePosition(
+              typeof data.queue_position === 'number' && data.queue_position > 0
+                ? data.queue_position
+                : 1
+            );
+          } else if (data.status === 'processing') {
+            setTabQueuePosition(null);
+          }
   
           if (data.status === 'done') {
             if (timer) clearInterval(timer);
