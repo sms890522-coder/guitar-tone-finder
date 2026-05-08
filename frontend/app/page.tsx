@@ -314,6 +314,8 @@ export default function Home() {
   const [tabProgress, setTabProgress] = useState(0);
   const [queuePosition, setQueuePosition] = useState<number | null>(null);
   const [tabQueuePosition, setTabQueuePosition] = useState<number | null>(null);
+  const [jobStatus, setJobStatus] = useState('');
+  const [tabJobStatus, setTabJobStatus] = useState('');
   
   useEffect(() => {
     const API_BASE_URL = 'https://guitar-tone-finder-api.onrender.com';
@@ -378,6 +380,8 @@ export default function Home() {
       setTimeout(() => {
         setLoading(false);
         setProgress(0);
+        setJobStatus('');
+        setTabJobStatus('');
       }, 500);
     }
   }
@@ -429,6 +433,8 @@ export default function Home() {
         setTabLoading(false);
         setTabProgress(0);
         setTabQueuePosition(null);
+        setJobStatus('');
+        setTabJobStatus('');
       }, 500);
     }
   }
@@ -447,6 +453,7 @@ export default function Home() {
           }
   
           setProgress(typeof data.progress === 'number' ? data.progress : 0);
+          setJobStatus(data.status || '');
           setQueuePosition(
             typeof data.queue_position === 'number' && data.queue_position > 0
               ? data.queue_position
@@ -487,7 +494,7 @@ export default function Home() {
           }
   
           setTabProgress(typeof data.progress === 'number' ? data.progress : 0);
-  
+          setTabJobStatus(data.status || '');
           setTabQueuePosition(
             typeof data.queue_position === 'number' && data.queue_position > 0
               ? data.queue_position
@@ -601,14 +608,16 @@ export default function Home() {
                 <div className="mb-2 flex items-center justify-between text-xs text-slate-300">
                   <span>
                    {queuePosition
-                      ? '대기열에서 순서를 기다리는 중...'
-                      : progress < 30
-                        ? '오디오 업로드 중...'
-                        : progress < 70
-                          ? '톤 특성 분석 중...'          
-                          : progress < 95          
-                            ? '앰프·이펙터 추천 생성 중...'          
-                            : '결과 정리 중...'}
+                      ? `대기열에서 순서를 기다리는 중... ${queuePosition}번째`
+                      : jobStatus === 'processing'
+                        ? '현재 분석 작업 처리 중...'
+                        : progress < 30
+                          ? '오디오 업로드 중...'
+                          : progress < 70
+                            ? '톤 특성 분석 중...'
+                            : progress < 95
+                              ? '앰프·이펙터 추천 생성 중...'
+                              : '결과 정리 중...'}
                   </span>
                   <span className="font-bold">{progress}%</span>
                 </div>
@@ -666,14 +675,16 @@ export default function Home() {
                     <div className="mb-2 flex items-center justify-between text-xs text-slate-300">
                       <span>
                         {tabQueuePosition
-                          ? '타브 생성 대기열에서 순서를 기다리는 중...'
-                          : tabProgress < 35
-                            ? '피치 분석 중...'
-                            : tabProgress < 70
-                              ? '음표와 프렛 위치 계산 중...'
-                              : tabProgress < 95
-                                ? '타브 마디 정리 중...'
-                                : 'TXT 파일 준비 중...'}
+                          ? `타브 생성 대기열에서 순서를 기다리는 중... ${tabQueuePosition}번째`
+                          : tabJobStatus === 'processing'
+                            ? '현재 타브 생성 작업 처리 중...'
+                            : tabProgress < 35
+                              ? '피치 분석 중...'
+                              : tabProgress < 70
+                                ? '음표와 프렛 위치 계산 중...'
+                                : tabProgress < 95
+                                  ? '타브 마디 정리 중...'
+                                  : 'TXT 파일 준비 중...'}
                       </span>
                       <span className="font-bold">{tabProgress}%</span>
                     </div>
@@ -692,7 +703,7 @@ export default function Home() {
                     </div>
                   </div>
                 )}
-                </div>
+                
           
                 {tabError && (
                   <p className="mt-4 rounded-xl bg-rose-500/15 p-4 text-sm text-rose-100">
