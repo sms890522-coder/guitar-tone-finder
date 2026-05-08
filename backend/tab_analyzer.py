@@ -134,17 +134,18 @@ def _build_ascii_tab(
     if not notes:
         return "\n".join([f"{s}|-" for s in STRING_ORDER])
 
-    total_duration = max(float(note["end"]) for note in notes)
+    total_duration = max(float(note.get("end", 0.0)) for note in notes)
     total_duration = max(total_duration, 1.0)
 
-    # BPM/마디 정보가 없으면 단일 블록으로 생성
+    # 마디 정보가 없을 때: 단일 블록
     if not bar_duration or bar_duration <= 0:
         width = min(max_width, max(40, int(total_duration * chars_per_second)))
-        lines = {s: ["-"] * width for s in STRING_ORDER}
+        tab_lines = {s: ["-"] * width for s in STRING_ORDER}
 
         for note in notes:
             string_name = note.get("string")
-            if string_name not in lines:
+
+            if string_name not in tab_lines:
                 continue
 
             fret_text = str(note.get("fret", "-"))
@@ -155,14 +156,14 @@ def _build_ascii_tab(
 
             for i, char in enumerate(fret_text):
                 if col + i < width:
-                    lines[string_name][col + i] = char
+                    tab_lines[string_name][col + i] = char
 
         for s in STRING_ORDER:
-            lines[s][-1] = "|"
+            tab_lines[s][-1] = "|"
 
-        return "\n".join([f"{s}|{''.join(lines[s])}" for s in STRING_ORDER])
+        return "\n".join([f"{s}|{''.join(tab_lines[s])}" for s in STRING_ORDER])
 
-    # 마디 기반 블록 생성
+    # 마디 기반: 4마디 단위 블록 생성
     total_bars = max(1, int(math.ceil(total_duration / bar_duration)))
     chars_per_bar = max(min_chars_per_bar, int(bar_duration * chars_per_second))
 
@@ -178,25 +179,25 @@ def _build_ascii_tab(
         block_end_time = block_end_bar * bar_duration
         block_duration = max(block_end_time - block_start_time, 0.1)
 
-        bar_count = block_end_bar - block_start_bar
-        block_width = bar_count * chars_per_bar + 1
+        bar_count = max(1, block_end_bar - block_start_bar)
+        block_width = max(2, bar_count * chars_per_bar + 1)
 
-        # 여기서 반드시 매 블록마다 lines 생성
-        lines = {s: ["-"] * block_width for s in STRING_ORDER}
+        block_lines = {s: ["-"] * block_width for s in STRING_ORDER}
 
         # 마디선 추가
         for local_bar in range(bar_count + 1):
             col = min(local_bar * chars_per_bar, block_width - 1)
-            for s in STRING_ORDER:
-                lines[s][col] = "|"
 
-        # 해당 블록 안의 음표 배치
+            for s in STRING_ORDER:
+                block_lines[s][col] = "|"
+
+        # 음표 배치
         for note in notes:
             note_start = float(note.get("start", 0.0))
             note_end = float(note.get("end", note_start))
             string_name = note.get("string")
 
-            if string_name not in lines:
+            if string_name not in block_lines:
                 continue
 
             if note_start >= block_end_time:
@@ -213,19 +214,21 @@ def _build_ascii_tab(
 
             for i, char in enumerate(fret_text):
                 if col + i < block_width:
-                    lines[string_name][col + i] = char
+                    block_lines[string_name][col + i] = char
 
-        # 첫 블록에만 줄 이름 표시
+        # 첫 블록만 줄 이름 표시
         if block_index == 0:
-            block_text = "\n".join([f"{s}{''.join(lines[s])}" for s in STRING_ORDER])
+            block_text = "\n".join(
+                [f"{s}{''.join(block_lines[s])}" for s in STRING_ORDER]
+            )
         else:
-            block_text = "\n".join([f" {''.join(lines[s])}" for s in STRING_ORDER])
+            block_text = "\n".join(
+                [f" {''.join(block_lines[s])}" for s in STRING_ORDER]
+            )
 
         rendered_blocks.append(block_text)
 
     return "\n\n".join(rendered_blocks)
-    
-
 
 def analyze_tab(path: str) -> dict[str, Any]:
     """
@@ -417,6 +420,7 @@ def analyze_tab(path: str) -> dict[str, Any]:
             "auto_preferred_position": int(auto_preferred_position),
             "pitch_method": "librosa.pyin + stable dominant midi",
             "position_strategy": "auto compact fret position + context aware placement",
+            "tab_builder": "block_lines-v4",
         },
         "disclaimer": "이 타브는 단음 리프/멜로디를 오디오에서 추정한 초안입니다. 코드, 벤딩, 비브라토, 빠른 솔로는 정확하지 않을 수 있습니다.",
     }
