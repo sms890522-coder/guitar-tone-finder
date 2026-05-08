@@ -428,32 +428,31 @@ export default function Home() {
   
     try {
       const API_BASE_URL = 'https://guitar-tone-finder-api.onrender.com';
-  
+    
       const response = await fetch(`${API_BASE_URL}/tab-queue`, {
         method: 'POST',
         body: formData,
       });
-  
-      const data = await response.json();
-  
-      console.log('TAB RESULT:', data);
-  
+    
+      const queued = await response.json();
+    
       if (!response.ok) {
-        throw new Error(data.detail || '타브 분석에 실패했습니다.');
+        throw new Error(queued.detail || '타브 대기열 등록에 실패했습니다.');
       }
-  
+    
+      setTabProgress(queued.status === 'queued' ? 5 : 0);
+    
+      const tabData = await pollTabJob(queued.job_id);
+    
       setTabProgress(100);
-      setTabResult(data);
+      setTabResult(tabData);
     } catch (err) {
       setTabError(err instanceof Error ? err.message : '알 수 없는 오류가 발생했습니다.');
     } finally {
-      if (tabProgressTimer) {
-        clearInterval(tabProgressTimer);
-      }
-  
       setTimeout(() => {
         setTabLoading(false);
         setTabProgress(0);
+        setTabQueuePosition(null);
       }, 500);
     }
   }
@@ -652,7 +651,13 @@ export default function Home() {
                         </span>
                         <span className="font-bold">{tabProgress}%</span>
                       </div>
-                  
+
+                      {tabQueuePosition && (
+                        <p className="mb-2 text-xs text-indigo-200">
+                          현재 타브 생성 대기 순번: {tabQueuePosition}번째
+                        </p>
+                      )}
+                      
                       <div className="h-3 overflow-hidden rounded-full bg-slate-800">
                         <div
                           className="meter-bg h-full rounded-full transition-all duration-500"
