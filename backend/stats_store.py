@@ -65,7 +65,6 @@ def get_stats() -> dict[str, int]:
             return {
                 "tone_analysis": data.get("tone_analysis", 0),
                 "tab_generation": data.get("tab_generation", 0),
-                "guide_download": data.get("guide_download", 0),
             }
         finally:
             conn.close()
