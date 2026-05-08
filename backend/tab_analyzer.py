@@ -126,26 +126,31 @@ def _build_ascii_tab(
 ) -> str:
     """
     텍스트 타브 생성.
-    - 4/4 기준 bar_duration이 있으면 마디선을 추가
-    - 너무 길게 한 줄로 가지 않고 bars_per_line 마디마다 아래로 줄바꿈
+    - bar_duration이 있으면 마디선 추가
+    - 4마디마다 아래로 줄바꿈
+    - 첫 블록에만 e/B/G/D/A/E 줄 이름 표시
     """
 
     if not notes:
         return "\n".join([f"{s}|-" for s in STRING_ORDER])
 
-    total_duration = max(note["end"] for note in notes)
+    total_duration = max(float(note["end"]) for note in notes)
     total_duration = max(total_duration, 1.0)
 
-    # bar_duration이 없으면 기존처럼 단일 블록 처리
+    # BPM/마디 정보가 없으면 단일 블록으로 생성
     if not bar_duration or bar_duration <= 0:
         width = min(max_width, max(40, int(total_duration * chars_per_second)))
         lines = {s: ["-"] * width for s in STRING_ORDER}
 
         for note in notes:
-            string_name = note["string"]
-            fret_text = str(note["fret"])
+            string_name = note.get("string")
+            if string_name not in lines:
+                continue
 
-            col = int((note["start"] / total_duration) * (width - 1))
+            fret_text = str(note.get("fret", "-"))
+            start = float(note.get("start", 0.0))
+
+            col = int((start / total_duration) * (width - 1))
             col = max(0, min(width - len(fret_text), col))
 
             for i, char in enumerate(fret_text):
@@ -157,63 +162,69 @@ def _build_ascii_tab(
 
         return "\n".join([f"{s}|{''.join(lines[s])}" for s in STRING_ORDER])
 
-    # ---- 여기부터 4마디씩 줄바꿈 처리 ----
+    # 마디 기반 블록 생성
     total_bars = max(1, int(math.ceil(total_duration / bar_duration)))
     chars_per_bar = max(min_chars_per_bar, int(bar_duration * chars_per_second))
 
-    # 한 줄 폭이 max_width를 넘지 않도록 안전 조정
     max_bars_fit = max(1, max_width // chars_per_bar)
     bars_per_line = max(1, min(bars_per_line, max_bars_fit))
 
     rendered_blocks: list[str] = []
 
-    for block_start_bar in range(0, total_bars, bars_per_line):
+    for block_index, block_start_bar in enumerate(range(0, total_bars, bars_per_line)):
         block_end_bar = min(block_start_bar + bars_per_line, total_bars)
 
         block_start_time = block_start_bar * bar_duration
         block_end_time = block_end_bar * bar_duration
-        block_duration = block_end_time - block_start_time
+        block_duration = max(block_end_time - block_start_time, 0.1)
 
-        block_width = (block_end_bar - block_start_bar) * chars_per_bar + 1
-        if block_start_bar == 0:
-            block_text = "\n".join([f"{s}{''.join(lines[s])}" for s in STRING_ORDER])
-        else:
-            block_text = "\n".join([f" {''.join(lines[s])}" for s in STRING_ORDER])
-            
-        # 마디선 넣기
-        for local_bar in range(block_end_bar - block_start_bar + 1):
+        bar_count = block_end_bar - block_start_bar
+        block_width = bar_count * chars_per_bar + 1
+
+        # 여기서 반드시 매 블록마다 lines 생성
+        lines = {s: ["-"] * block_width for s in STRING_ORDER}
+
+        # 마디선 추가
+        for local_bar in range(bar_count + 1):
             col = min(local_bar * chars_per_bar, block_width - 1)
             for s in STRING_ORDER:
                 lines[s][col] = "|"
 
-        # 해당 블록 안에 들어오는 음만 배치
-        block_notes = [
-            note for note in notes
-            if note["start"] < block_end_time and note["end"] > block_start_time
-        ]
+        # 해당 블록 안의 음표 배치
+        for note in notes:
+            note_start = float(note.get("start", 0.0))
+            note_end = float(note.get("end", note_start))
+            string_name = note.get("string")
 
-        for note in block_notes:
-            string_name = note["string"]
-            fret_text = str(note["fret"])
+            if string_name not in lines:
+                continue
 
-            relative_start = max(0.0, note["start"] - block_start_time)
+            if note_start >= block_end_time:
+                continue
+
+            if note_end <= block_start_time:
+                continue
+
+            fret_text = str(note.get("fret", "-"))
+            relative_start = max(0.0, note_start - block_start_time)
 
             col = int((relative_start / block_duration) * (block_width - 1))
             col = max(0, min(block_width - len(fret_text), col))
 
-            # 마디선 "|" 위에 숫자가 덮어쓰는 건 허용
             for i, char in enumerate(fret_text):
                 if col + i < block_width:
                     lines[string_name][col + i] = char
 
-        if block_start_bar == 0:
+        # 첫 블록에만 줄 이름 표시
+        if block_index == 0:
             block_text = "\n".join([f"{s}{''.join(lines[s])}" for s in STRING_ORDER])
         else:
             block_text = "\n".join([f" {''.join(lines[s])}" for s in STRING_ORDER])
-        
+
         rendered_blocks.append(block_text)
-        
+
     return "\n\n".join(rendered_blocks)
+    
 
 
 def analyze_tab(path: str) -> dict[str, Any]:
