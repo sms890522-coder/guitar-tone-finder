@@ -45,33 +45,26 @@ def health() -> dict[str, str]:
 async def process_queued_job(job_id: str, job: dict):
     payload = job.get("payload", {})
     tmp_path = payload.get("tmp_path")
-    filename = payload.get("filename")
     job_type = job.get("type")
 
     if not tmp_path:
         raise RuntimeError("작업 파일이 없습니다.")
 
     try:
-        
-        
         if job_type == "analyze":
             update_job(job_id, progress=30)
 
-            analysis = analyze_audio(tmp_path)
+            analysis = await asyncio.to_thread(analyze_audio, tmp_path)
 
             update_job(job_id, progress=75)
 
-            rec = recommend_tone(analysis)
+            rec = await asyncio.to_thread(recommend_tone, analysis)
 
-            increment_counter("tone_analysis")
-            
             update_job(
                 job_id,
                 status="done",
                 progress=100,
                 result={
-                    "ok": True,
-                    "filename": filename,
                     "analysis": analysis,
                     "recommendation": rec,
                 },
@@ -80,15 +73,13 @@ async def process_queued_job(job_id: str, job: dict):
         elif job_type == "tab":
             update_job(job_id, progress=30)
 
-            tab_result = analyze_tab(tmp_path)
-            increment_counter("tab_generation")
+            tab_result = await asyncio.to_thread(analyze_tab, tmp_path)
+
             update_job(
                 job_id,
                 status="done",
                 progress=100,
                 result={
-                    "ok": True,
-                    "filename": filename,
                     "tab_analysis": tab_result,
                 },
             )
@@ -135,19 +126,21 @@ async def analyze_queue(file: UploadFile = File(...)):
         job_id = create_job(
             "analyze",
             {
-                "tmp_path": tmp_path,
-                "filename": file.filename,
-            },
+                "tmp_path": tmp_path,    
+                "filename": file.filename,   
+            },    
         )
-
-        return {
-            "ok": True,
+    
+        queued_jobs = get_all_queued_job_ids()
+        queue_position = queued_jobs.index(job_id) + 1 if job_id in queued_jobs else 1
+    
+        return {    
+            "ok": True,    
             "job_id": job_id,
-            "status": "queued",
-            "queue_position": get_all_queued_job_ids().index(job_id) + 1,
-            "message": "분석 작업이 대기열에 추가되었습니다.",
+            "status": "queued",    
+            "queue_position": queue_position,   
+            "message": "분석 작업이 대기열에 추가되었습니다.",   
         }
-
     except RuntimeError as exc:
         try:
             os.remove(tmp_path)
@@ -181,20 +174,21 @@ async def tab_queue(file: UploadFile = File(...)):
 
     try:
         job_id = create_job(
-            "tab",
-            {
-                "tmp_path": tmp_path,
-                "filename": file.filename,
-            },
-        )
+        "tab",
+        {
+            "tmp_path": tmp_path,
+            "filename": file.filename,
+        },
+    )
+    queued_jobs = get_all_queued_job_ids()
+    queue_position = queued_jobs.index(job_id) + 1 if job_id in queued_jobs else 1
 
-        return {
-            "ok": True,
-            "job_id": job_id,
-            "status": "queued",
-            "queue_position": get_all_queued_job_ids().index(job_id) + 1,
-            "message": "타브 생성 작업이 대기열에 추가되었습니다.",
-        }
+    return {
+        "ok": True,
+        "job_id": job_id,
+        "status": "queued",
+        "queue_position": queue_position,
+        "message": "타브 생성 작업이 대기열에 추가되었습니다.",
 
     except RuntimeError as exc:
         try:
