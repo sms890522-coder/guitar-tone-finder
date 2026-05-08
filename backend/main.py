@@ -1,5 +1,5 @@
 from __future__ import annotations
-
+from stats_store import get_stats, increment_counter, init_stats_db
 import asyncio
 import os
 import tempfile
@@ -63,6 +63,8 @@ async def process_queued_job(job_id: str, job: dict):
 
             rec = recommend_tone(analysis)
 
+            increment_counter("tone_analysis")
+            
             update_job(
                 job_id,
                 status="done",
@@ -79,7 +81,7 @@ async def process_queued_job(job_id: str, job: dict):
             update_job(job_id, progress=30)
 
             tab_result = analyze_tab(tmp_path)
-
+            increment_counter("tab_generation")
             update_job(
                 job_id,
                 status="done",
@@ -103,6 +105,7 @@ async def process_queued_job(job_id: str, job: dict):
 
 @app.on_event("startup")
 async def startup_event():
+    init_stats_db()
     asyncio.create_task(worker_loop(process_queued_job))
 
 
@@ -310,4 +313,25 @@ async def tab_analyze_direct(file: UploadFile = File(...)):
             os.remove(tmp_path)
         except OSError:
             pass
+
+
+@app.get("/stats")
+async def stats():
+    return {
+        "ok": True,
+        "stats": get_stats(),
+    }
+
+
+@app.post("/stats/guide-download")
+async def count_guide_download():
+    value = increment_counter("guide_download")
+
+    return {
+        "ok": True,
+        "guide_download": value,
+        "stats": get_stats(),
+    }
+
+
 
