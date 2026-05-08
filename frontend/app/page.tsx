@@ -651,7 +651,7 @@ export default function Home() {
                       오디오에서 들리는 주요 단음 라인을 추정해 기타 타브 초안을 만듭니다.
                     </p>
                   </div>
-          
+                
                   <button
                     onClick={analyzeTab}
                     disabled={tabLoading || !file}
@@ -659,35 +659,39 @@ export default function Home() {
                   >
                     {tabLoading ? '타브 생성 중...' : '타브 초안 만들기'}
                   </button>
-                  {tabLoading && (
-                    <div className="mt-4 rounded-2xl bg-white/5 p-4">
-                      <div className="mb-2 flex items-center justify-between text-xs text-slate-300">
-                        <span>
-                          {tabProgress < 35
+                </div>
+                
+                {tabLoading && (
+                  <div className="mt-4 rounded-2xl bg-white/5 p-4">
+                    <div className="mb-2 flex items-center justify-between text-xs text-slate-300">
+                      <span>
+                        {tabQueuePosition
+                          ? '타브 생성 대기열에서 순서를 기다리는 중...'
+                          : tabProgress < 35
                             ? '피치 분석 중...'
                             : tabProgress < 70
                               ? '음표와 프렛 위치 계산 중...'
                               : tabProgress < 95
                                 ? '타브 마디 정리 중...'
                                 : 'TXT 파일 준비 중...'}
-                        </span>
-                        <span className="font-bold">{tabProgress}%</span>
-                      </div>
-
-                      {tabQueuePosition && (
-                        <p className="mb-2 text-xs text-indigo-200">
-                          현재 타브 생성 대기 순번: {tabQueuePosition}번째
-                        </p>
-                      )}
-                      
-                      <div className="h-3 overflow-hidden rounded-full bg-slate-800">
-                        <div
-                          className="meter-bg h-full rounded-full transition-all duration-500"
-                          style={{ width: `${tabProgress}%` }}
-                        />
-                      </div>
+                      </span>
+                      <span className="font-bold">{tabProgress}%</span>
                     </div>
-                  )}
+                
+                    {tabQueuePosition && (
+                      <p className="mb-2 text-xs text-indigo-200">
+                        현재 타브 생성 대기 순번: {tabQueuePosition}번째
+                      </p>
+                    )}
+                
+                    <div className="h-3 overflow-hidden rounded-full bg-slate-800">
+                      <div
+                        className="meter-bg h-full rounded-full transition-all duration-500"
+                        style={{ width: `${tabProgress}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
                 </div>
           
                 {tabError && (
