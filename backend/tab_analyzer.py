@@ -175,8 +175,11 @@ def _build_ascii_tab(
         block_duration = block_end_time - block_start_time
 
         block_width = (block_end_bar - block_start_bar) * chars_per_bar + 1
-        lines = {s: ["-"] * block_width for s in STRING_ORDER}
-
+        if block_start_bar == 0:
+            block_text = "\n".join([f"{s}{''.join(lines[s])}" for s in STRING_ORDER])
+        else:
+            block_text = "\n".join([f" {''.join(lines[s])}" for s in STRING_ORDER])
+            
         # 마디선 넣기
         for local_bar in range(block_end_bar - block_start_bar + 1):
             col = min(local_bar * chars_per_bar, block_width - 1)
@@ -203,9 +206,13 @@ def _build_ascii_tab(
                 if col + i < block_width:
                     lines[string_name][col + i] = char
 
-        block_text = "\n".join([f"{s}{''.join(lines[s])}" for s in STRING_ORDER])
+        if block_start_bar == 0:
+            block_text = "\n".join([f"{s}{''.join(lines[s])}" for s in STRING_ORDER])
+        else:
+            block_text = "\n".join([f" {''.join(lines[s])}" for s in STRING_ORDER])
+        
         rendered_blocks.append(block_text)
-
+        
     return "\n\n".join(rendered_blocks)
 
 
