@@ -389,10 +389,16 @@ export default function Home() {
       throw new Error(queued.detail || '분석 대기열 등록에 실패했습니다.');
     }
     
+    setJobStatus(queued.status || 'queued');
     setProgress(queued.status === 'queued' ? 5 : 0);
     
-    const resultData = await pollAnalyzeJob(queued.job_id);
+    setQueuePosition(
+      typeof queued.queue_position === 'number' && queued.queue_position > 0
+        ? queued.queue_position
+        : 1
+    );
     
+    const resultData = await pollAnalyzeJob(queued.job_id);
     setProgress(100);
     setResult(resultData);  
     } catch (err) {
@@ -441,10 +447,16 @@ export default function Home() {
         throw new Error(queued.detail || '타브 대기열 등록에 실패했습니다.');
       }
     
-      setTabProgress(queued.status === 'queued' ? 5 : 0);
+   setTabJobStatus(queued.status || 'queued');
+   setTabProgress(queued.status === 'queued' ? 5 : 0);
     
-      const tabData = await pollTabJob(queued.job_id);
+   setTabQueuePosition(
+     typeof queued.queue_position === 'number' && queued.queue_position > 0
+       ? queued.queue_position
+       : 1
+   );
     
+    const tabData = await pollTabJob(queued.job_id); 
       setTabProgress(100);
       setTabResult(tabData);
     } catch (err) {
@@ -464,7 +476,9 @@ export default function Home() {
     const API_BASE_URL = 'https://guitar-tone-finder-api.onrender.com';
   
     return new Promise<Result>((resolve, reject) => {
-      const timer = setInterval(async () => {
+      let timer: ReturnType<typeof setInterval> | null = null;
+  
+      const checkStatus = async () => {
         try {
           const response = await fetch(`${API_BASE_URL}/jobs/${jobId}`);
           const data = await response.json();
@@ -475,6 +489,7 @@ export default function Home() {
   
           setProgress(typeof data.progress === 'number' ? data.progress : 0);
           setJobStatus(data.status || '');
+  
           setQueuePosition(
             typeof data.queue_position === 'number' && data.queue_position > 0
               ? data.queue_position
@@ -482,22 +497,25 @@ export default function Home() {
           );
   
           if (data.status === 'done') {
-            clearInterval(timer);
+            if (timer) clearInterval(timer);
             setQueuePosition(null);
             resolve(data.result);
           }
   
           if (data.status === 'failed') {
-            clearInterval(timer);
+            if (timer) clearInterval(timer);
             setQueuePosition(null);
             reject(new Error(data.error || '분석 작업에 실패했습니다.'));
           }
         } catch (err) {
-          clearInterval(timer);
+          if (timer) clearInterval(timer);
           setQueuePosition(null);
           reject(err);
         }
-      }, 1000);
+      };
+  
+      checkStatus();
+      timer = setInterval(checkStatus, 1000);
     });
   }
 
@@ -505,7 +523,9 @@ export default function Home() {
     const API_BASE_URL = 'https://guitar-tone-finder-api.onrender.com';
   
     return new Promise<TabResult>((resolve, reject) => {
-      const timer = setInterval(async () => {
+      let timer: ReturnType<typeof setInterval> | null = null;
+  
+      const checkStatus = async () => {
         try {
           const response = await fetch(`${API_BASE_URL}/jobs/${jobId}`);
           const data = await response.json();
@@ -516,6 +536,7 @@ export default function Home() {
   
           setTabProgress(typeof data.progress === 'number' ? data.progress : 0);
           setTabJobStatus(data.status || '');
+  
           setTabQueuePosition(
             typeof data.queue_position === 'number' && data.queue_position > 0
               ? data.queue_position
@@ -523,7 +544,7 @@ export default function Home() {
           );
   
           if (data.status === 'done') {
-            clearInterval(timer);
+            if (timer) clearInterval(timer);
             setTabQueuePosition(null);
   
             resolve({
@@ -534,16 +555,19 @@ export default function Home() {
           }
   
           if (data.status === 'failed') {
-            clearInterval(timer);
+            if (timer) clearInterval(timer);
             setTabQueuePosition(null);
             reject(new Error(data.error || '타브 작업에 실패했습니다.'));
           }
         } catch (err) {
-          clearInterval(timer);
+          if (timer) clearInterval(timer);
           setTabQueuePosition(null);
           reject(err);
         }
-      }, 1000);
+      };
+  
+      checkStatus();
+      timer = setInterval(checkStatus, 1000);
     });
   }
 
