@@ -312,6 +312,8 @@ export default function Home() {
   const [tabLoading, setTabLoading] = useState(false);
   const [tabError, setTabError] = useState('');
   const [tabProgress, setTabProgress] = useState(0);
+  const [queuePosition, setQueuePosition] = useState<number | null>(null);
+  const [tabQueuePosition, setTabQueuePosition] = useState<number | null>(null);
   
   useEffect(() => {
     const API_BASE_URL = 'https://guitar-tone-finder-api.onrender.com';
@@ -337,6 +339,10 @@ export default function Home() {
       return;
     }
 
+
+    setQueuePosition(null);
+    setTabQueuePosition(null);
+    
     setLoading(true);
     setError('');
     setResult(null);
@@ -359,21 +365,23 @@ export default function Home() {
     try {
       const API_BASE_URL = 'https://guitar-tone-finder-api.onrender.com';
 
-      const response = await fetch(`${API_BASE_URL}/analyze`, {
-        method: 'POST',
-        body: formData,
-      });
-
-      const data = await response.json();
-
-      console.log('ANALYZE RESULT:', data);
-
-      if (!response.ok) {
-        throw new Error(data.detail || '분석에 실패했습니다.');
-      }
-
-      setProgress(100);
-      setResult(data);
+    const response = await fetch(`${API_BASE_URL}/analyze-queue`, {
+      method: 'POST',
+      body: formData,
+    });
+    
+    const queued = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(queued.detail || '분석 대기열 등록에 실패했습니다.');
+    }
+    
+    setProgress(queued.status === 'queued' ? 5 : 0);
+    
+    const resultData = await pollAnalyzeJob(queued.job_id);
+    
+    setProgress(100);
+    setResult(resultData);  
     } catch (err) {
       setError(err instanceof Error ? err.message : '알 수 없는 오류가 발생했습니다.');
     } finally {
@@ -421,7 +429,7 @@ export default function Home() {
     try {
       const API_BASE_URL = 'https://guitar-tone-finder-api.onrender.com';
   
-      const response = await fetch(`${API_BASE_URL}/tab-analyze`, {
+      const response = await fetch(`${API_BASE_URL}/tab-queue`, {
         method: 'POST',
         body: formData,
       });
@@ -448,6 +456,46 @@ export default function Home() {
         setTabProgress(0);
       }, 500);
     }
+  }
+
+  async function pollAnalyzeJob(jobId: string) {
+    const API_BASE_URL = 'https://guitar-tone-finder-api.onrender.com';
+  
+    return new Promise<Result>((resolve, reject) => {
+      const timer = setInterval(async () => {
+        try {
+          const response = await fetch(`${API_BASE_URL}/jobs/${jobId}`);
+          const data = await response.json();
+  
+          if (!response.ok) {
+            throw new Error(data.detail || '작업 상태 확인에 실패했습니다.');
+          }
+  
+          setProgress(typeof data.progress === 'number' ? data.progress : 0);
+          setQueuePosition(
+            typeof data.queue_position === 'number' && data.queue_position > 0
+              ? data.queue_position
+              : null
+          );
+  
+          if (data.status === 'done') {
+            clearInterval(timer);
+            setQueuePosition(null);
+            resolve(data.result);
+          }
+  
+          if (data.status === 'failed') {
+            clearInterval(timer);
+            setQueuePosition(null);
+            reject(new Error(data.error || '분석 작업에 실패했습니다.'));
+          }
+        } catch (err) {
+          clearInterval(timer);
+          setQueuePosition(null);
+          reject(err);
+        }
+      }, 1000);
+    });
   }
 
   return (
@@ -531,16 +579,24 @@ export default function Home() {
               <div className="mt-4 rounded-2xl bg-white/5 p-4">
                 <div className="mb-2 flex items-center justify-between text-xs text-slate-300">
                   <span>
-                    {progress < 30
-                      ? '오디오 업로드 중...'
-                      : progress < 70
-                        ? '톤 특성 분석 중...'
-                        : progress < 95
-                          ? '앰프·이펙터 추천 생성 중...'
-                          : '결과 정리 중...'}
+                   {queuePosition
+                      ? '대기열에서 순서를 기다리는 중...'
+                      : progress < 30
+                        ? '오디오 업로드 중...'
+                        : progress < 70
+                          ? '톤 특성 분석 중...'          
+                          : progress < 95          
+                            ? '앰프·이펙터 추천 생성 중...'          
+                            : '결과 정리 중...'}
                   </span>
                   <span className="font-bold">{progress}%</span>
                 </div>
+                {queuePosition && (
+                  <p className="mt-2 text-xs text-indigo-200">
+                    현재 대기 순번: {queuePosition}번째
+                  </p>
+                )}
+                
             
                 <div className="h-3 overflow-hidden rounded-full bg-slate-800">
                   <div
