@@ -85,7 +85,7 @@ async def process_queued_job(job_id: str, job: dict):
             )
 
         else:
-            raise RuntimeError(f"알 수 없는 작업 타입입니다: {job_type}")
+            raise RuntimeError("알 수 없는 작업 타입입니다: {job_type}")
 
     finally:
         try:
