@@ -59,7 +59,7 @@ type Recommendation = {
   amp_candidates?: Array<{
     name: string;
     score: number;
-    reason: string
+    reason: string;
   }>;
   amp_reason: string;
   drive: {
@@ -200,8 +200,8 @@ type TabResult = {
 
 
 type Result = {
-  ok: boolean;
-  filename: string;
+  ok?: boolean;
+  filename?: string;
   analysis: {
     version?: string;
     stats: Record<string, number>;
@@ -348,16 +348,6 @@ export default function Home() {
     setResult(null);
     setProgress(0);
     
-    let progressTimer: ReturnType<typeof setInterval> | null = null;
-    
-    progressTimer = setInterval(() => {
-      setProgress((prev) => {
-        if (prev < 60) return prev + 6;
-        if (prev < 82) return prev + 3;
-        if (prev < 94) return prev + 1;
-        return prev;
-      });
-    }, 450);
     
     const formData = new FormData();
     formData.append('file', file);
@@ -385,10 +375,6 @@ export default function Home() {
     } catch (err) {
       setError(err instanceof Error ? err.message : '알 수 없는 오류가 발생했습니다.');
     } finally {
-      if (progressTimer) {
-        clearInterval(progressTimer);
-      }
-    
       setTimeout(() => {
         setLoading(false);
         setProgress(0);
@@ -412,16 +398,6 @@ export default function Home() {
     setTabResult(null);
     setTabProgress(0);
   
-    let tabProgressTimer: ReturnType<typeof setInterval> | null = null;
-  
-    tabProgressTimer = setInterval(() => {
-      setTabProgress((prev) => {
-        if (prev < 45) return prev + 5;
-        if (prev < 75) return prev + 3;
-        if (prev < 93) return prev + 1;
-        return prev;
-      });
-    }, 450);
   
     const formData = new FormData();
     formData.append('file', file);
@@ -491,6 +467,52 @@ export default function Home() {
         } catch (err) {
           clearInterval(timer);
           setQueuePosition(null);
+          reject(err);
+        }
+      }, 1000);
+    });
+  }
+
+  async function pollTabJob(jobId: string) {
+    const API_BASE_URL = 'https://guitar-tone-finder-api.onrender.com';
+  
+    return new Promise<TabResult>((resolve, reject) => {
+      const timer = setInterval(async () => {
+        try {
+          const response = await fetch(`${API_BASE_URL}/jobs/${jobId}`);
+          const data = await response.json();
+  
+          if (!response.ok) {
+            throw new Error(data.detail || '타브 작업 상태 확인에 실패했습니다.');
+          }
+  
+          setTabProgress(typeof data.progress === 'number' ? data.progress : 0);
+  
+          setTabQueuePosition(
+            typeof data.queue_position === 'number' && data.queue_position > 0
+              ? data.queue_position
+              : null
+          );
+  
+          if (data.status === 'done') {
+            clearInterval(timer);
+            setTabQueuePosition(null);
+  
+            resolve({
+              ok: true,
+              filename: file?.name || 'tab-draft',
+              tab_analysis: data.result.tab_analysis,
+            });
+          }
+  
+          if (data.status === 'failed') {
+            clearInterval(timer);
+            setTabQueuePosition(null);
+            reject(new Error(data.error || '타브 작업에 실패했습니다.'));
+          }
+        } catch (err) {
+          clearInterval(timer);
+          setTabQueuePosition(null);
           reject(err);
         }
       }, 1000);
@@ -1515,8 +1537,7 @@ function downloadTabDraft(tabResult: TabResult) {
 
 function TabPanel({ tabResult }: { tabResult: TabResult }) {
   const tab = tabResult.tab_analysis;
-  const previewLines = tab.tab.split('\n').slice(0, 6).join('\n');
-
+  
   return (
     <div className="mt-5 rounded-2xl bg-slate-950/60 p-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
