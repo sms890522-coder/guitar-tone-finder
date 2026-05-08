@@ -52,7 +52,7 @@ async def process_queued_job(job_id: str, job: dict):
         raise RuntimeError("작업 파일이 없습니다.")
 
     try:
-        await asyncio.sleep(8)
+        
         
         if job_type == "analyze":
             update_job(job_id, progress=30)
