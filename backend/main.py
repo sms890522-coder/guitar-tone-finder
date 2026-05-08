@@ -60,6 +60,8 @@ async def process_queued_job(job_id: str, job: dict):
 
             rec = await asyncio.to_thread(recommend_tone, analysis)
 
+            increment_counter("tone_analysis")
+
             update_job(
                 job_id,
                 status="done",
@@ -75,6 +77,8 @@ async def process_queued_job(job_id: str, job: dict):
 
             tab_result = await asyncio.to_thread(analyze_tab, tmp_path)
 
+            increment_counter("tab_generation")
+
             update_job(
                 job_id,
                 status="done",
@@ -85,7 +89,7 @@ async def process_queued_job(job_id: str, job: dict):
             )
 
         else:
-            raise RuntimeError("알 수 없는 작업 타입입니다: {job_type}")
+            raise RuntimeError(f"알 수 없는 작업 타입입니다: {job_type}")
 
     finally:
         try:
@@ -174,21 +178,23 @@ async def tab_queue(file: UploadFile = File(...)):
 
     try:
         job_id = create_job(
-        "tab",
-        {
-            "tmp_path": tmp_path,
-            "filename": file.filename,
-        },
-    )
-    queued_jobs = get_all_queued_job_ids()
-    queue_position = queued_jobs.index(job_id) + 1 if job_id in queued_jobs else 1
+            "tab",
+            {
+                "tmp_path": tmp_path,
+                "filename": file.filename,
+            },
+        )
 
-    return {
-        "ok": True,
-        "job_id": job_id,
-        "status": "queued",
-        "queue_position": queue_position,
-        "message": "타브 생성 작업이 대기열에 추가되었습니다.",
+        queued_jobs = get_all_queued_job_ids()
+        queue_position = queued_jobs.index(job_id) + 1 if job_id in queued_jobs else 1
+
+        return {
+            "ok": True,
+            "job_id": job_id,
+            "status": "queued",
+            "queue_position": queue_position,
+            "message": "타브 생성 작업이 대기열에 추가되었습니다.",
+        }
 
     except RuntimeError as exc:
         try:
@@ -197,8 +203,7 @@ async def tab_queue(file: UploadFile = File(...)):
             pass
 
         raise HTTPException(status_code=429, detail=str(exc)) from exc
-
-
+        
 @app.get("/jobs/{job_id}")
 async def get_job_status(job_id: str):
     job = get_job(job_id)
