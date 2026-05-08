@@ -87,3 +87,13 @@ async def worker_loop(
         finally:
             queue.task_done()
             cleanup_old_jobs()
+
+
+
+def get_all_queued_job_ids() -> list[str]:
+    return [
+        job_id
+        for job_id, job in jobs.items()
+        if job.get("status") == "queued"
+    ]
+
