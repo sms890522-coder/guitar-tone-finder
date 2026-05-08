@@ -144,6 +144,7 @@ async def analyze_queue(file: UploadFile = File(...)):
             "ok": True,
             "job_id": job_id,
             "status": "queued",
+            "queue_position": get_all_queued_job_ids().index(job_id) + 1,
             "message": "분석 작업이 대기열에 추가되었습니다.",
         }
 
@@ -191,6 +192,7 @@ async def tab_queue(file: UploadFile = File(...)):
             "ok": True,
             "job_id": job_id,
             "status": "queued",
+            "queue_position": get_all_queued_job_ids().index(job_id) + 1,
             "message": "타브 생성 작업이 대기열에 추가되었습니다.",
         }
 
