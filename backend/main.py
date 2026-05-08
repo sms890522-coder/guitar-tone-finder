@@ -43,7 +43,7 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.post("/analyze")
+@app.post("/analyze-queue")
 async def analyze(file: UploadFile = File(...)):
     suffix = Path(file.filename or "").suffix.lower()
     if suffix not in ALLOWED_EXTENSIONS:
@@ -266,5 +266,39 @@ async def get_job_status(job_id: str):
         "queue_position": queue_position,
     }
 
+
+
+async function pollJob(jobId: string, onDone: (result: any) => void, onError: (message: string) => void) {
+  const API_BASE_URL = 'https://guitar-tone-finder-api.onrender.com';
+
+  const timer = setInterval(async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/jobs/${jobId}`);
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.detail || '작업 상태를 확인하지 못했습니다.');
+      }
+
+      if (typeof data.progress === 'number') {
+        setProgress(data.progress);
+        setTabProgress(data.progress);
+      }
+
+      if (data.status === 'done') {
+        clearInterval(timer);
+        onDone(data.result);
+      }
+
+      if (data.status === 'failed') {
+        clearInterval(timer);
+        onError(data.error || '작업에 실패했습니다.');
+      }
+    } catch (err) {
+      clearInterval(timer);
+      onError(err instanceof Error ? err.message : '알 수 없는 오류가 발생했습니다.');
+    }
+  }, 1000);
+}
 
 
