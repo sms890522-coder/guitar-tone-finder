@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import tempfile
 from pathlib import Path
@@ -10,26 +11,25 @@ from fastapi.middleware.cors import CORSMiddleware
 from analyzer import analyze_audio
 from recommender import recommend_tone
 from tab_analyzer import analyze_tab
-
-import asyncio
-from queue_manager import create_job, get_job, update_job, worker_loop
-
-from queue_manager import create_job, get_job, get_all_queued_job_ids, update_job, worker_loop
-
+from queue_manager import (
+    create_job,
+    get_all_queued_job_ids,
+    get_job,
+    update_job,
+    worker_loop,
+)
 
 app = FastAPI(title="Guitar Tone Finder API")
 
 ALLOWED_EXTENSIONS = {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg"}
 MAX_FILE_SIZE = 25 * 1024 * 1024  # 25MB
 
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-
         "http://localhost:3000",
-
         "https://guitar-tone-finder.vercel.app",
-
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -37,76 +37,15 @@ app.add_middleware(
 )
 
 
-
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.post("/analyze-queue")
-async def analyze(file: UploadFile = File(...)):
-    suffix = Path(file.filename or "").suffix.lower()
-    if suffix not in ALLOWED_EXTENSIONS:
-        raise HTTPException(status_code=400, detail="MP3, WAV, M4A, AAC, FLAC, OGG 파일만 지원합니다.")
-
-    content = await file.read()
-    if len(content) > MAX_FILE_SIZE:
-        raise HTTPException(status_code=413, detail="파일은 25MB 이하로 업로드해주세요.")
-
-    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-        tmp.write(content)
-        tmp_path = tmp.name
-
-    try:
-        analysis = analyze_audio(tmp_path)
-        rec = recommend_tone(analysis)
-        return {"analysis": analysis, "recommendation": rec}
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"분석에 실패했습니다: {exc}") from exc
-    finally:
-        try:
-            os.remove(tmp_path)
-        except OSError:
-            pass
-
-
-
-@app.post("/tab-analyze")
-async def tab_analyze(file: UploadFile = File(...)):
-    suffix = Path(file.filename or "").suffix.lower()
-
-    if suffix not in ALLOWED_EXTENSIONS:
-        raise HTTPException(status_code=400, detail="MP3, WAV, M4A, AAC, FLAC, OGG 파일만 지원합니다.")
-
-    content = await file.read()
-
-    if len(content) > MAX_FILE_SIZE:
-        raise HTTPException(status_code=413, detail="파일은 25MB 이하로 업로드해주세요.")
-
-    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-        tmp.write(content)
-        tmp_path = tmp.name
-
-    try:
-        tab_result = analyze_tab(tmp_path)
-        return {
-            "ok": True,
-            "filename": file.filename,
-            "tab_analysis": tab_result,
-        }
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"타브 분석에 실패했습니다: {exc}") from exc
-    finally:
-        try:
-            os.remove(tmp_path)
-        except OSError:
-            pass
-
-
-
 async def process_queued_job(job_id: str, job: dict):
     payload = job.get("payload", {})
     tmp_path = payload.get("tmp_path")
+    filename = payload.get("filename")
     job_type = job.get("type")
 
     if not tmp_path:
@@ -115,9 +54,11 @@ async def process_queued_job(job_id: str, job: dict):
     try:
         if job_type == "analyze":
             update_job(job_id, progress=30)
+
             analysis = analyze_audio(tmp_path)
 
             update_job(job_id, progress=75)
+
             rec = recommend_tone(analysis)
 
             update_job(
@@ -125,6 +66,8 @@ async def process_queued_job(job_id: str, job: dict):
                 status="done",
                 progress=100,
                 result={
+                    "ok": True,
+                    "filename": filename,
                     "analysis": analysis,
                     "recommendation": rec,
                 },
@@ -132,6 +75,7 @@ async def process_queued_job(job_id: str, job: dict):
 
         elif job_type == "tab":
             update_job(job_id, progress=30)
+
             tab_result = analyze_tab(tmp_path)
 
             update_job(
@@ -139,6 +83,8 @@ async def process_queued_job(job_id: str, job: dict):
                 status="done",
                 progress=100,
                 result={
+                    "ok": True,
+                    "filename": filename,
                     "tab_analysis": tab_result,
                 },
             )
@@ -152,6 +98,7 @@ async def process_queued_job(job_id: str, job: dict):
         except OSError:
             pass
 
+
 @app.on_event("startup")
 async def startup_event():
     asyncio.create_task(worker_loop(process_queued_job))
@@ -162,12 +109,18 @@ async def analyze_queue(file: UploadFile = File(...)):
     suffix = Path(file.filename or "").suffix.lower()
 
     if suffix not in ALLOWED_EXTENSIONS:
-        raise HTTPException(status_code=400, detail="MP3, WAV, M4A, AAC, FLAC, OGG 파일만 지원합니다.")
+        raise HTTPException(
+            status_code=400,
+            detail="MP3, WAV, M4A, AAC, FLAC, OGG 파일만 지원합니다.",
+        )
 
     content = await file.read()
 
     if len(content) > MAX_FILE_SIZE:
-        raise HTTPException(status_code=413, detail="파일은 25MB 이하로 업로드해주세요.")
+        raise HTTPException(
+            status_code=413,
+            detail="파일은 25MB 이하로 업로드해주세요.",
+        )
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
         tmp.write(content)
@@ -203,12 +156,18 @@ async def tab_queue(file: UploadFile = File(...)):
     suffix = Path(file.filename or "").suffix.lower()
 
     if suffix not in ALLOWED_EXTENSIONS:
-        raise HTTPException(status_code=400, detail="MP3, WAV, M4A, AAC, FLAC, OGG 파일만 지원합니다.")
+        raise HTTPException(
+            status_code=400,
+            detail="MP3, WAV, M4A, AAC, FLAC, OGG 파일만 지원합니다.",
+        )
 
     content = await file.read()
 
     if len(content) > MAX_FILE_SIZE:
-        raise HTTPException(status_code=413, detail="파일은 25MB 이하로 업로드해주세요.")
+        raise HTTPException(
+            status_code=413,
+            detail="파일은 25MB 이하로 업로드해주세요.",
+        )
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
         tmp.write(content)
@@ -248,11 +207,9 @@ async def get_job_status(job_id: str):
 
     queue_position = 0
 
-    if job["status"] == "queued":
-        queued_jobs = [
-            item
-            for item in get_all_queued_job_ids()
-        ]
+    if job.get("status") == "queued":
+        queued_jobs = get_all_queued_job_ids()
+
         if job_id in queued_jobs:
             queue_position = queued_jobs.index(job_id) + 1
 
@@ -267,38 +224,88 @@ async def get_job_status(job_id: str):
     }
 
 
+# 선택: 기존 프론트 호환용 즉시 분석 API
+@app.post("/analyze")
+async def analyze_direct(file: UploadFile = File(...)):
+    suffix = Path(file.filename or "").suffix.lower()
 
-async function pollJob(jobId: string, onDone: (result: any) => void, onError: (message: string) => void) {
-  const API_BASE_URL = 'https://guitar-tone-finder-api.onrender.com';
+    if suffix not in ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail="MP3, WAV, M4A, AAC, FLAC, OGG 파일만 지원합니다.",
+        )
 
-  const timer = setInterval(async () => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/jobs/${jobId}`);
-      const data = await response.json();
+    content = await file.read()
 
-      if (!response.ok) {
-        throw new Error(data.detail || '작업 상태를 확인하지 못했습니다.');
-      }
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail="파일은 25MB 이하로 업로드해주세요.",
+        )
 
-      if (typeof data.progress === 'number') {
-        setProgress(data.progress);
-        setTabProgress(data.progress);
-      }
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        tmp.write(content)
+        tmp_path = tmp.name
 
-      if (data.status === 'done') {
-        clearInterval(timer);
-        onDone(data.result);
-      }
+    try:
+        analysis = analyze_audio(tmp_path)
+        rec = recommend_tone(analysis)
 
-      if (data.status === 'failed') {
-        clearInterval(timer);
-        onError(data.error || '작업에 실패했습니다.');
-      }
-    } catch (err) {
-      clearInterval(timer);
-      onError(err instanceof Error ? err.message : '알 수 없는 오류가 발생했습니다.');
-    }
-  }, 1000);
-}
+        return {
+            "ok": True,
+            "filename": file.filename,
+            "analysis": analysis,
+            "recommendation": rec,
+        }
 
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"분석에 실패했습니다: {exc}") from exc
+
+    finally:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+
+
+# 선택: 기존 프론트 호환용 즉시 타브 API
+@app.post("/tab-analyze")
+async def tab_analyze_direct(file: UploadFile = File(...)):
+    suffix = Path(file.filename or "").suffix.lower()
+
+    if suffix not in ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail="MP3, WAV, M4A, AAC, FLAC, OGG 파일만 지원합니다.",
+        )
+
+    content = await file.read()
+
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail="파일은 25MB 이하로 업로드해주세요.",
+        )
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        tmp.write(content)
+        tmp_path = tmp.name
+
+    try:
+        tab_result = analyze_tab(tmp_path)
+
+        return {
+            "ok": True,
+            "filename": file.filename,
+            "tab_analysis": tab_result,
+        }
+
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"타브 분석에 실패했습니다: {exc}") from exc
+
+    finally:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
 
