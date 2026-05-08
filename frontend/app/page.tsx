@@ -560,8 +560,10 @@ export default function Home() {
               <h1 className="text-xl font-black tracking-tight">ToneScope AI</h1>
             </div>
           </div>
-          <div className="rounded-full border border-white/10 px-4 py-2 text-xs text-slate-300">
-            MVP v3 · Improved Analysis
+          <div className="rounded-full border border-white/10 bg-white/5 px-3 py-2 text-[11px] text-slate-300">
+            {globalStats
+              ? `분석 ${globalStats.tone_analysis.toLocaleString()} · 타브 ${globalStats.tab_generation.toLocaleString()}`
+              : 'MVP v3'}
           </div>
         </nav>
 
