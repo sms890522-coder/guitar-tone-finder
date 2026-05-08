@@ -121,10 +121,13 @@ def _build_ascii_tab(
     bar_duration: float | None = None,
     chars_per_second: int = 8,
     max_width: int = 160,
+    bars_per_line: int = 4,
+    min_chars_per_bar: int = 12,
 ) -> str:
     """
     텍스트 타브 생성.
-    bar_duration이 있으면 4/4 기준 마디선을 추가한다.
+    - 4/4 기준 bar_duration이 있으면 마디선을 추가
+    - 너무 길게 한 줄로 가지 않고 bars_per_line 마디마다 아래로 줄바꿈
     """
 
     if not notes:
@@ -133,40 +136,78 @@ def _build_ascii_tab(
     total_duration = max(note["end"] for note in notes)
     total_duration = max(total_duration, 1.0)
 
-    width = min(max_width, max(40, int(total_duration * chars_per_second)))
+    # bar_duration이 없으면 기존처럼 단일 블록 처리
+    if not bar_duration or bar_duration <= 0:
+        width = min(max_width, max(40, int(total_duration * chars_per_second)))
+        lines = {s: ["-"] * width for s in STRING_ORDER}
 
-    lines = {s: ["-"] * width for s in STRING_ORDER}
+        for note in notes:
+            string_name = note["string"]
+            fret_text = str(note["fret"])
 
-    # 마디선 추가
-    if bar_duration and bar_duration > 0:
-        bar_time = 0.0
+            col = int((note["start"] / total_duration) * (width - 1))
+            col = max(0, min(width - len(fret_text), col))
 
-        while bar_time < total_duration:
-            col = int((bar_time / total_duration) * (width - 1))
-            col = max(0, min(width - 1, col))
+            for i, char in enumerate(fret_text):
+                if col + i < width:
+                    lines[string_name][col + i] = char
 
+        for s in STRING_ORDER:
+            lines[s][-1] = "|"
+
+        return "\n".join([f"{s}|{''.join(lines[s])}" for s in STRING_ORDER])
+
+    # ---- 여기부터 4마디씩 줄바꿈 처리 ----
+    total_bars = max(1, int(math.ceil(total_duration / bar_duration)))
+    chars_per_bar = max(min_chars_per_bar, int(bar_duration * chars_per_second))
+
+    # 한 줄 폭이 max_width를 넘지 않도록 안전 조정
+    max_bars_fit = max(1, max_width // chars_per_bar)
+    bars_per_line = max(1, min(bars_per_line, max_bars_fit))
+
+    rendered_blocks: list[str] = []
+
+    for block_start_bar in range(0, total_bars, bars_per_line):
+        block_end_bar = min(block_start_bar + bars_per_line, total_bars)
+
+        block_start_time = block_start_bar * bar_duration
+        block_end_time = block_end_bar * bar_duration
+        block_duration = block_end_time - block_start_time
+
+        block_width = (block_end_bar - block_start_bar) * chars_per_bar + 1
+        lines = {s: ["-"] * block_width for s in STRING_ORDER}
+
+        # 마디선 넣기
+        for local_bar in range(block_end_bar - block_start_bar + 1):
+            col = min(local_bar * chars_per_bar, block_width - 1)
             for s in STRING_ORDER:
                 lines[s][col] = "|"
 
-            bar_time += bar_duration
+        # 해당 블록 안에 들어오는 음만 배치
+        block_notes = [
+            note for note in notes
+            if note["start"] < block_end_time and note["end"] > block_start_time
+        ]
 
-    # 음표 추가
-    for note in notes:
-        string_name = note["string"]
-        fret_text = str(note["fret"])
+        for note in block_notes:
+            string_name = note["string"]
+            fret_text = str(note["fret"])
 
-        col = int((note["start"] / total_duration) * (width - 1))
-        col = max(0, min(width - len(fret_text), col))
+            relative_start = max(0.0, note["start"] - block_start_time)
 
-        for i, char in enumerate(fret_text):
-            if col + i < width:
-                lines[string_name][col + i] = char
+            col = int((relative_start / block_duration) * (block_width - 1))
+            col = max(0, min(block_width - len(fret_text), col))
 
-    # 끝 마디선
-    for s in STRING_ORDER:
-        lines[s][-1] = "|"
+            # 마디선 "|" 위에 숫자가 덮어쓰는 건 허용
+            for i, char in enumerate(fret_text):
+                if col + i < block_width:
+                    lines[string_name][col + i] = char
 
-    return "\n".join([f"{s}|{''.join(lines[s])}" for s in STRING_ORDER])
+        block_text = "\n".join([f"{s}{''.join(lines[s])}" for s in STRING_ORDER])
+        rendered_blocks.append(block_text)
+
+    return "\n\n".join(rendered_blocks)
+
 
 def analyze_tab(path: str) -> dict[str, Any]:
     """
