@@ -203,6 +203,27 @@ type TabResult = {
   tab_analysis: TabAnalysis;
 };
 
+type MultiFxDevice = 'fm3' | 'mooer_ge250';
+
+const multiFxDevices: Array<{
+  id: MultiFxDevice;
+  name: string;
+  label: string;
+  extension: string;
+}> = [
+  {
+    id: 'fm3',
+    name: 'Fractal Audio FM3',
+    label: 'FM3 / Fractal 계열',
+    extension: 'txt',
+  },
+  {
+    id: 'mooer_ge250',
+    name: 'Mooer GE250',
+    label: 'Mooer GE250',
+    extension: 'txt',
+  },
+];
 
 type Result = {
   ok?: boolean;
@@ -937,6 +958,242 @@ ${guide.notes.map((note) => `- ${note}`).join('\n')}
 `.trim();
 }
 
+function buildMooerGe250PresetGuideText(result: Result) {
+  const recommendation = result.recommendation;
+  const guide = recommendation.fm3_preset_guide;
+
+  const ampSettings = recommendation.amp_settings || {};
+  const drive = recommendation.drive || {};
+  const cabinet = recommendation.cabinet || {};
+  const ambience = recommendation.ambience || {};
+  const eqMoves = recommendation.suggested_eq_moves || [];
+  const effects = recommendation.effects_recommendation;
+
+  const gain = Number(ampSettings.gain ?? 5).toFixed(1);
+  const bass = Number(ampSettings.bass ?? 5).toFixed(1);
+  const mid = Number(ampSettings.mid ?? 5).toFixed(1);
+  const treble = Number(ampSettings.treble ?? 5).toFixed(1);
+  const presence = Number(ampSettings.presence ?? 5).toFixed(1);
+  const master = Number(ampSettings.master ?? 5).toFixed(1);
+
+  return `
+ToneScope AI - Mooer GE250 Preset Guide
+=======================================
+
+Device:
+Mooer GE250
+
+Preset Name:
+${guide?.preset_name || `ToneScope ${recommendation.tone_type || 'Guitar Tone'}`}
+
+Tone Type:
+${recommendation.tone_type || 'Unknown Tone'}
+
+Summary:
+${recommendation.tone_summary || '-'}
+
+Confidence:
+${recommendation.confidence ?? 0}%
+
+
+Recommended GE250 Signal Chain
+------------------------------
+1. Noise Gate
+2. Drive / OD
+3. Amp
+4. Cab
+5. EQ
+6. Modulation
+7. Delay
+8. Reverb
+
+
+Noise Gate
+----------
+Threshold: -55dB ~ -45dB
+Decay/Release: Medium
+Tip:
+하이게인 톤이면 노이즈 게이트를 강하게, 클린/크런치면 약하게 설정하세요.
+
+
+Drive / OD
+----------
+Type:
+${drive.type || 'Overdrive'}
+
+Model Examples:
+${Array.isArray(drive.model_examples) ? drive.model_examples.join(', ') : '-'}
+
+Suggested GE250 Direction:
+- Tube Screamer 계열 OD 또는 Clean Boost 계열을 먼저 선택
+- Drive는 낮게, Level은 높게 두고 앰프 앞단을 밀어주는 방식 추천
+
+Drive: ${drive.drive ?? '-'}
+Tone: ${drive.tone ?? '-'}
+Level: ${drive.level ?? '-'}
+
+Purpose:
+${drive.purpose || '-'}
+
+
+Amp
+---
+Recommended Amp Family:
+${recommendation.amp_family || '-'}
+
+Recommended Amp Model:
+${recommendation.amp_model || '-'}
+
+Amp Examples:
+${Array.isArray(recommendation.amp_examples) ? recommendation.amp_examples.join(', ') : '-'}
+
+GE250 Setting Start Point:
+Gain: ${gain}
+Bass: ${bass}
+Middle: ${mid}
+Treble: ${treble}
+Presence: ${presence}
+Master: ${master}
+
+Tip:
+GE250에 동일한 앰프명이 없으면, 비슷한 계열을 선택하세요.
+- Mesa/Rectifier 계열: Modern High Gain / Cali / Recto 계열
+- Marshall 계열: British / Plexi / JCM 계열
+- Soldano 계열: SLO / American High Gain 계열
+- Fender 계열: US Clean / Deluxe / Twin 계열
+
+
+Cab / IR
+--------
+Recommended Cab:
+${cabinet.cab || '-'}
+
+Recommended Mic:
+${cabinet.mic || '-'}
+
+GE250 Cab Direction:
+- 하이게인: 4x12 V30 계열
+- 클래식 록: 4x12 Greenback 계열
+- 클린/크런치: 2x12 Open Back 계열
+- 저음이 과하면 Low Cut 80~120Hz
+- 지글거림이 많으면 High Cut 6.5~8.5kHz
+
+Cab Tip:
+${cabinet.tip || '-'}
+
+
+EQ
+--
+${eqMoves.length > 0
+  ? eqMoves
+      .map(
+        (move, index) =>
+          `${index + 1}. ${move.type}
+   Frequency: ${move.frequency}
+   Gain: ${move.gain_db > 0 ? `+${move.gain_db}` : move.gain_db}dB
+   Q: ${move.q}
+   Reason: ${move.reason}`
+      )
+      .join('\n\n')
+  : '추천 EQ 보정값이 없습니다.'}
+
+
+Modulation
+----------
+Effect:
+${effects?.modulation?.effect || 'Off / 필요 시 Chorus'}
+
+Mix:
+${effects?.modulation?.mix ?? 0}%
+
+Rate:
+${effects?.modulation?.rate ?? '-'}
+
+Depth:
+${effects?.modulation?.depth ?? '-'}
+
+Tip:
+${effects?.modulation?.tip || '원본 톤에 코러스 느낌이 없으면 꺼두는 것을 추천합니다.'}
+
+
+Delay
+-----
+Type:
+${effects?.delay?.type || ambience.delay || 'Digital Delay'}
+
+Time:
+${effects?.delay?.time || '-'}
+
+Mix:
+${effects?.delay?.mix ?? ambience.delay_mix ?? 0}%
+
+Feedback:
+${effects?.delay?.feedback ?? '-'}%
+
+Tip:
+${effects?.delay?.tip || '리듬톤은 낮게, 리드톤은 10~20% 정도로 시작하세요.'}
+
+
+Reverb
+------
+Type:
+${ambience.reverb || 'Room / Plate'}
+
+Mix:
+${ambience.reverb_mix ?? 0}%
+
+Tip:
+${ambience.tip || '-'}
+
+
+Notes
+-----
+${Array.isArray(recommendation.notes) && recommendation.notes.length > 0
+  ? recommendation.notes.map((note) => `- ${note}`).join('\n')
+  : '- 이 파일은 GE250에서 그대로 불러오는 전용 프리셋 파일이 아니라, GE250에서 수동으로 따라 만들기 위한 세팅 가이드입니다.'}
+`.trim();
+}
+
+function buildMultiFxPresetGuideText(result: Result, device: MultiFxDevice) {
+  if (device === 'fm3') {
+    return buildFm3PresetGuideText(result);
+  }
+
+  if (device === 'mooer_ge250') {
+    return buildMooerGe250PresetGuideText(result);
+  }
+
+  return '지원하지 않는 멀티이펙터입니다.';
+}
+
+
+function downloadMultiFxPresetGuide(result: Result, device: MultiFxDevice) {
+  const selectedDevice = multiFxDevices.find((item) => item.id === device);
+  const text = buildMultiFxPresetGuideText(result, device);
+
+  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+
+  const toneName =
+    result.recommendation.tone_type
+      ?.toLowerCase()
+      .replaceAll('/', '-')
+      .replaceAll(' ', '-')
+      .replaceAll('--', '-')
+      .replace(/[^a-z0-9가-힣-]/gi, '') || 'preset-guide';
+
+  const deviceName = selectedDevice?.id || 'multi-fx';
+
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `${deviceName}-${toneName}-preset-guide.txt`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+
+  URL.revokeObjectURL(url);
+}
+
 function downloadFm3PresetGuide(result: Result) {
   const text = buildFm3PresetGuideText(result);
   const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
@@ -961,6 +1218,8 @@ function downloadFm3PresetGuide(result: Result) {
 }
 
 function ResultPanel({ result }: { result: Result }) {
+  const [selectedMultiFx, setSelectedMultiFx] = useState<MultiFxDevice | ''>('');
+
   const scores = result?.analysis?.scores || ({} as Scores);
   const eqProfile = result?.analysis?.eq_profile || ({} as EqProfile);
   const recommendation = result?.recommendation || ({} as Recommendation);
@@ -1010,28 +1269,58 @@ function ResultPanel({ result }: { result: Result }) {
 
   return (
     <div>
-      {recommendation.fm3_preset_guide && (
-        <div className="mb-5 rounded-[1.5rem] bg-indigo-400/10 p-5 ring-1 ring-indigo-300/20">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-[0.2em] text-indigo-200">
-                Preset Guide
-              </p>
-              <h4 className="mt-1 font-black">FM3 프리셋 가이드 생성</h4>
-              <p className="mt-1 text-sm leading-6 text-slate-300">
-                분석 결과를 바탕으로 FM3-Edit에서 따라 만들 수 있는 세팅 가이드를 다운로드합니다.
-              </p>
-            </div>
-  
+      <div className="mb-5 rounded-[1.5rem] bg-indigo-400/10 p-5 ring-1 ring-indigo-300/20">
+        <div className="flex flex-col gap-4">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.2em] text-indigo-200">
+              Preset Guide
+            </p>
+            <h4 className="mt-1 font-black">멀티이펙터 프리셋 가이드 다운로드</h4>
+            <p className="mt-1 text-sm leading-6 text-slate-300">
+              분석 결과를 바탕으로 선택한 멀티이펙터에서 따라 만들 수 있는 세팅 가이드를 다운로드합니다.
+            </p>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
+            <label className="block">
+              <span className="mb-2 block text-xs font-bold text-slate-300">
+                멀티이펙터 선택
+              </span>
+
+              <select
+                value={selectedMultiFx}
+                onChange={(event) => setSelectedMultiFx(event.target.value as MultiFxDevice)}
+                className="w-full rounded-2xl border border-white/10 bg-slate-950 px-4 py-3 text-sm font-bold text-white outline-none transition focus:border-indigo-300"
+              >
+                <option value="">기기를 선택해주세요</option>
+                {multiFxDevices.map((device) => (
+                  <option key={device.id} value={device.id}>
+                    {device.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
             <button
-              onClick={() => downloadFm3PresetGuide(result)}
-              className="rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-950 transition hover:scale-[1.02]"
+              onClick={() => {
+                if (!selectedMultiFx) return;
+                downloadMultiFxPresetGuide(result, selectedMultiFx);
+              }}
+              disabled={!selectedMultiFx}
+              className="rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-950 transition hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-40"
             >
-              FM3 가이드 다운로드
+              다운로드
             </button>
           </div>
+
+          {selectedMultiFx && (
+            <p className="text-xs leading-5 text-indigo-100">
+              선택됨:{' '}
+              {multiFxDevices.find((device) => device.id === selectedMultiFx)?.name}
+            </p>
+          )}
         </div>
-      )}
+      </div>
 
       <div className="rounded-[1.5rem] bg-white p-6 text-slate-950">        <div className="flex items-start justify-between gap-4">
           <div>
