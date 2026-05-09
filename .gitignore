@@ -21,3 +21,4 @@ yarn-error.log*
 
 # Uploads
 backend/uploads/
+backend/stats.db
