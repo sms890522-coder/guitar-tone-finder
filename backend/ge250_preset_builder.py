@@ -193,10 +193,6 @@ def build_ge250_preset(
     analysis: dict[str, Any],
     recommendation: dict[str, Any],
 ) -> tuple[str, bytes]:
-    if not GE250_TEMPLATE_PATH.exists():
-        raise FileNotFoundError(
-            "GE250 템플릿 파일이 없습니다. backend/preset_templates/ge250_base.mo 를 추가해주세요."
-        )
 
 
     template_path = _pick_template_file(recommendation, scores)
