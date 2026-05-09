@@ -194,6 +194,9 @@ def build_ge250_preset(
     recommendation: dict[str, Any],
 ) -> tuple[str, bytes]:
 
+    scores = analysis.get("scores", {}) or {}
+    eq_profile = analysis.get("eq_profile", {}) or {}
+    effects = analysis.get("effects", {}) or {}
 
     template_path = _pick_template_file(recommendation, scores)
 
@@ -209,9 +212,6 @@ def build_ge250_preset(
 
     preset = copy.deepcopy(template)
 
-    scores = analysis.get("scores", {}) or {}
-    eq_profile = analysis.get("eq_profile", {}) or {}
-    effects = analysis.get("effects", {}) or {}
 
     amp_settings = recommendation.get("amp_settings", {}) or {}
     drive = recommendation.get("drive", {}) or {}
