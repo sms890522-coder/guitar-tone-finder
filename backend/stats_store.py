@@ -20,6 +20,8 @@ def get_stats() -> dict[str, int]:
         .execute()
     )
 
+    print("SUPABASE RAW DATA:", response.data)
+
     stats = {
         "tone_analysis": 0,
         "tab_generation": 0,
@@ -28,8 +30,10 @@ def get_stats() -> dict[str, int]:
     for row in response.data or []:
         stats[row["name"]] = int(row["value"])
 
-    return stats
+    print("RETURN STATS:", stats)
 
+    return stats
+    
 
 def increment_counter(name: str) -> int:
     if name not in ["tone_analysis", "tab_generation"]:
