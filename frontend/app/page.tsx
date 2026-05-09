@@ -221,7 +221,7 @@ const multiFxDevices: Array<{
     id: 'mooer_ge250',
     name: 'Mooer GE250',
     label: 'Mooer GE250',
-    extension: 'txt',
+    extension: 'mo',
   },
 ];
 
@@ -1167,7 +1167,12 @@ function buildMultiFxPresetGuideText(result: Result, device: MultiFxDevice) {
 }
 
 
-function downloadMultiFxPresetGuide(result: Result, device: MultiFxDevice) {
+async function downloadMultiFxPresetGuide(result: Result, device: MultiFxDevice) {
+  if (device === 'mooer_ge250') {
+    await downloadGe250Preset(result);
+    return;
+  }
+
   const selectedDevice = multiFxDevices.find((item) => item.id === device);
   const text = buildMultiFxPresetGuideText(result, device);
 
@@ -1210,6 +1215,42 @@ function downloadFm3PresetGuide(result: Result) {
   const link = document.createElement('a');
   link.href = url;
   link.download = `${safeName}-fm3-preset-guide.txt`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+
+  URL.revokeObjectURL(url);
+}
+
+async function downloadGe250Preset(result: Result) {
+  const API_BASE_URL = 'https://guitar-tone-finder-api.onrender.com';
+
+  const response = await fetch(`${API_BASE_URL}/preset/ge250`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      analysis: result.analysis,
+      recommendation: result.recommendation,
+    }),
+  });
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => null);
+    throw new Error(data?.detail || 'GE250 프리셋 생성에 실패했습니다.');
+  }
+
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+
+  const contentDisposition = response.headers.get('Content-Disposition') || '';
+  const filenameMatch = contentDisposition.match(/filename="(.+)"/);
+  const filename = filenameMatch?.[1] || 'tonescope-ge250.mo';
+
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
   document.body.appendChild(link);
   link.click();
   link.remove();
@@ -1302,9 +1343,14 @@ function ResultPanel({ result }: { result: Result }) {
             </label>
 
             <button
-              onClick={() => {
+              onClick={async () => {
                 if (!selectedMultiFx) return;
-                downloadMultiFxPresetGuide(result, selectedMultiFx);
+
+                try {
+                  await downloadMultiFxPresetGuide(result, selectedMultiFx);
+                } catch (error) {
+                  alert(error instanceof Error ? error.message : '다운로드에 실패했습니다.');
+                }
               }}
               disabled={!selectedMultiFx}
               className="rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-950 transition hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-40"
