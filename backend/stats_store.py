@@ -3,50 +3,62 @@ from __future__ import annotations
 import os
 from supabase import create_client, Client
 
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")
 
-if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
-    raise RuntimeError("SUPABASE_URL 또는 SUPABASE_SERVICE_ROLE_KEY가 설정되지 않았습니다.")
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+
+def init_stats_db() -> None:
+    # Supabase에서는 테이블을 SQL Editor에서 미리 만들기 때문에 여기서는 아무것도 안 해도 됨
+    return
 
 
 def get_stats() -> dict[str, int]:
-    response = (
-        supabase.table("app_stats")
-        .select("name,value")
-        .in_("name", ["tone_analysis", "tab_generation"])
-        .execute()
-    )
-
-    print("SUPABASE RAW DATA:", response.data)
-
     stats = {
         "tone_analysis": 0,
         "tab_generation": 0,
     }
 
+    response = (
+        supabase.table("app_stats")
+        .select("*")
+        .execute()
+    )
+
+    print("ALL APP_STATS ROWS:", response.data)
+
     for row in response.data or []:
-        stats[row["name"]] = int(row["value"])
+        name = row.get("name")
+        value = row.get("value", 0)
+
+        if name in stats:
+            stats[name] = int(value or 0)
 
     print("RETURN STATS:", stats)
 
     return stats
-    
+
 
 def increment_counter(name: str) -> int:
     if name not in ["tone_analysis", "tab_generation"]:
-        raise ValueError("허용되지 않은 카운터 이름입니다.")
+        raise ValueError(f"Unknown counter name: {name}")
 
-    response = supabase.rpc("increment_stat", {"counter_name": name}).execute()
+    current = get_stats().get(name, 0)
+    new_value = current + 1
 
-    if response.data is None:
-        return get_stats().get(name, 0)
+    response = (
+        supabase.table("app_stats")
+        .upsert(
+            {
+                "name": name,
+                "value": new_value,
+            },
+            on_conflict="name",
+        )
+        .execute()
+    )
 
-    return int(response.data)
+    print("INCREMENT RESPONSE:", response.data)
 
-
-def init_stats_db() -> None:
-    # Supabase에서는 앱 시작 때 SQLite 초기화가 필요 없음
-    return
+    return new_value
