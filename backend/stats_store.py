@@ -1,76 +1,48 @@
 from __future__ import annotations
 
 import os
-from typing import Any
+from supabase import create_client, Client
 
-from supabase import Client, create_client
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
+if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+    raise RuntimeError("SUPABASE_URL 또는 SUPABASE_SERVICE_ROLE_KEY가 설정되지 않았습니다.")
 
-_supabase: Client | None = None
-
-
-def get_supabase() -> Client:
-    global _supabase
-
-    if _supabase is not None:
-        return _supabase
-
-    url = os.getenv("SUPABASE_URL")
-    key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-
-    if not url or not key:
-        raise RuntimeError("Supabase 환경변수가 설정되지 않았습니다.")
-
-    _supabase = create_client(url, key)
-    return _supabase
-
-
-def init_stats_db() -> None:
-    """
-    Supabase에서는 SQL Editor에서 테이블을 만들기 때문에
-    여기서는 연결 확인 정도만 한다.
-    """
-    get_supabase()
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
 
 def get_stats() -> dict[str, int]:
-    supabase = get_supabase()
-
     response = (
         supabase.table("app_stats")
-        .select("key,value")
-        .in_("key", ["tone_analysis", "tab_generation"])
+        .select("name,value")
+        .in_("name", ["tone_analysis", "tab_generation"])
         .execute()
     )
-
-    rows: list[dict[str, Any]] = response.data or []
 
     stats = {
         "tone_analysis": 0,
         "tab_generation": 0,
     }
 
-    for row in rows:
-        key = str(row.get("key"))
-        value = int(row.get("value") or 0)
-
-        if key in stats:
-            stats[key] = value
+    for row in response.data or []:
+        stats[row["name"]] = int(row["value"])
 
     return stats
 
 
-def increment_counter(key: str) -> int:
-    if key not in {"tone_analysis", "tab_generation"}:
-        raise ValueError(f"지원하지 않는 카운터입니다: {key}")
+def increment_counter(name: str) -> int:
+    if name not in ["tone_analysis", "tab_generation"]:
+        raise ValueError("허용되지 않은 카운터 이름입니다.")
 
-    supabase = get_supabase()
+    response = supabase.rpc("increment_stat", {"counter_name": name}).execute()
 
-    response = supabase.rpc(
-        "increment_stat",
-        {
-            "stat_key": key,
-        },
-    ).execute()
+    if response.data is None:
+        return get_stats().get(name, 0)
 
-    return int(response.data or 0)
+    return int(response.data)
+
+
+def init_stats_db() -> None:
+    # Supabase에서는 앱 시작 때 SQLite 초기화가 필요 없음
+    return
