@@ -198,7 +198,19 @@ def build_ge250_preset(
             "GE250 템플릿 파일이 없습니다. backend/preset_templates/ge250_base.mo 를 추가해주세요."
         )
 
-    template = json.loads(GE250_TEMPLATE_PATH.read_text(encoding="utf-8"))
+
+    template_path = _pick_template_file(recommendation, scores)
+
+    if not template_path.exists():
+        template_path = BASE_DIR / "preset_templates" / "ge250_base.mo"
+
+    if not template_path.exists():
+        raise FileNotFoundError(
+            "GE250 템플릿 파일이 없습니다. backend/preset_templates/ 안에 ge250_base.mo 또는 타입별 템플릿을 추가해주세요."
+        )
+
+    template = json.loads(template_path.read_text(encoding="utf-8"))
+
     preset = copy.deepcopy(template)
 
     scores = analysis.get("scores", {}) or {}
@@ -266,7 +278,7 @@ def build_ge250_preset(
     # CAB
     cab = effect_module.setdefault("CAB", {"Data": {}, "Switch": 1, "Type": 8})
     cab["Switch"] = 1
-    cab["Type"] = _pick_cab_type(recommendation)
+    cab["Type"] = _pick_cab_type(recommendation, scores)
 
     cab["Data"] = {
         "Center": 15,
@@ -315,3 +327,47 @@ def build_ge250_preset(
     content = json.dumps(preset, ensure_ascii=False, indent=4).encode("utf-8")
 
     return filename, content
+
+
+def _pick_template_file(recommendation: dict[str, Any], scores: dict[str, Any]) -> Path:
+    text = " ".join(
+        [
+            str(recommendation.get("tone_type", "")),
+            str(recommendation.get("amp_family", "")),
+            str(recommendation.get("amp_model", "")),
+            " ".join(recommendation.get("amp_examples", []) or []),
+        ]
+    ).lower()
+
+    high_gain = float(scores.get("high_gain_likelihood", 0) or 0)
+    gain = float(scores.get("gain", 0) or 0)
+
+    template_dir = BASE_DIR / "preset_templates"
+
+    if "soldano" in text or "slo" in text:
+        return template_dir / "ge250_soldano.mo"
+
+    if "rect" in text or "rectifier" in text or "mesa" in text or "boogie" in text:
+        return template_dir / "ge250_recto.mo"
+
+    if "5150" in text or "evh" in text or "peavey" in text:
+        return template_dir / "ge250_5150.mo"
+
+    if "orange" in text or "dark" in text or "terror" in text:
+        return template_dir / "ge250_orange.mo"
+
+    if "jcm" in text or "j800" in text or "marshall" in text:
+        return template_dir / "ge250_jcm800.mo"
+
+    if "clean" in text or "twin" in text or "fender" in text:
+        return template_dir / "ge250_clean.mo"
+
+    if high_gain >= 6 or gain >= 6:
+        return template_dir / "ge250_recto.mo"
+
+    if gain >= 3.5:
+        return template_dir / "ge250_crunch.mo"
+
+    return template_dir / "ge250_clean.mo"
+
+
