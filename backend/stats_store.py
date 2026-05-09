@@ -1,70 +1,76 @@
 from __future__ import annotations
 
-import sqlite3
-from pathlib import Path
-from threading import Lock
-from typing import Literal
+import os
+from typing import Any
 
-DB_PATH = Path("stats.db")
-_lock = Lock()
+from supabase import Client, create_client
 
-CounterName = Literal["tone_analysis", "tab_generation", "guide_download"]
+
+_supabase: Client | None = None
+
+
+def get_supabase() -> Client:
+    global _supabase
+
+    if _supabase is not None:
+        return _supabase
+
+    url = os.getenv("SUPABASE_URL")
+    key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+
+    if not url or not key:
+        raise RuntimeError("Supabase 환경변수가 설정되지 않았습니다.")
+
+    _supabase = create_client(url, key)
+    return _supabase
 
 
 def init_stats_db() -> None:
-    with _lock:
-        conn = sqlite3.connect(DB_PATH)
-        try:
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS counters (
-                    name TEXT PRIMARY KEY,
-                    value INTEGER NOT NULL DEFAULT 0
-                )
-                """
-            )
-
-            for name in ["tone_analysis", "tab_generation", "guide_download"]:
-                conn.execute(
-                    "INSERT OR IGNORE INTO counters (name, value) VALUES (?, 0)",
-                    (name,),
-                )
-
-            conn.commit()
-        finally:
-            conn.close()
-
-
-def increment_counter(name: CounterName, amount: int = 1) -> int:
-    with _lock:
-        conn = sqlite3.connect(DB_PATH)
-        try:
-            conn.execute(
-                "UPDATE counters SET value = value + ? WHERE name = ?",
-                (amount, name),
-            )
-            conn.commit()
-
-            row = conn.execute(
-                "SELECT value FROM counters WHERE name = ?",
-                (name,),
-            ).fetchone()
-
-            return int(row[0]) if row else 0
-        finally:
-            conn.close()
+    """
+    Supabase에서는 SQL Editor에서 테이블을 만들기 때문에
+    여기서는 연결 확인 정도만 한다.
+    """
+    get_supabase()
 
 
 def get_stats() -> dict[str, int]:
-    with _lock:
-        conn = sqlite3.connect(DB_PATH)
-        try:
-            rows = conn.execute("SELECT name, value FROM counters").fetchall()
-            data = {str(name): int(value) for name, value in rows}
+    supabase = get_supabase()
 
-            return {
-                "tone_analysis": data.get("tone_analysis", 0),
-                "tab_generation": data.get("tab_generation", 0),
-            }
-        finally:
-            conn.close()
+    response = (
+        supabase.table("app_stats")
+        .select("key,value")
+        .in_("key", ["tone_analysis", "tab_generation"])
+        .execute()
+    )
+
+    rows: list[dict[str, Any]] = response.data or []
+
+    stats = {
+        "tone_analysis": 0,
+        "tab_generation": 0,
+    }
+
+    for row in rows:
+        key = str(row.get("key"))
+        value = int(row.get("value") or 0)
+
+        if key in stats:
+            stats[key] = value
+
+    return stats
+
+
+def increment_counter(key: str) -> int:
+    if key not in {"tone_analysis", "tab_generation"}:
+        raise ValueError(f"지원하지 않는 카운터입니다: {key}")
+
+    supabase = get_supabase()
+
+    response = supabase.rpc(
+        "increment_stat",
+        {
+            "stat_key": key,
+        },
+    ).execute()
+
+    return int(response.data or 0)
