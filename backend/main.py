@@ -19,6 +19,10 @@ from queue_manager import (
     worker_loop,
 )
 
+from typing import Any
+from fastapi.responses import Response
+from ge250_preset_builder import build_ge250_preset
+
 app = FastAPI(title="Guitar Tone Finder API")
 
 ALLOWED_EXTENSIONS = {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg"}
@@ -335,4 +339,39 @@ async def count_guide_download():
     }
 
 
+@app.post("/preset/ge250")
+async def create_ge250_preset(payload: dict[str, Any]):
+    try:
+        analysis = payload.get("analysis", {})
+        recommendation = payload.get("recommendation", {})
+
+        if not analysis or not recommendation:
+            raise HTTPException(
+                status_code=400,
+                detail="analysis와 recommendation 데이터가 필요합니다.",
+            )
+
+        filename, content = build_ge250_preset(
+            analysis=analysis,
+            recommendation=recommendation,
+        )
+
+        return Response(
+            content=content,
+            media_type="application/octet-stream",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"'
+            },
+        )
+
+    except HTTPException:
+        raise
+
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"GE250 프리셋 생성에 실패했습니다: {exc}",
+        ) from exc
+
+        
 
