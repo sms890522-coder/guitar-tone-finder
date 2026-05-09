@@ -43,10 +43,6 @@ def _safe_preset_name(name: str) -> str:
 
 
 def _pick_amp_type(recommendation: dict[str, Any], scores: dict[str, Any]) -> int:
-    """
-    업로드된 GE250 샘플에서 추정한 Type 값.
-    공식 매핑은 아니므로 추후 사용자가 보유한 GE250 프리셋으로 보정 가능.
-    """
     text = " ".join(
         [
             str(recommendation.get("tone_type", "")),
@@ -59,8 +55,14 @@ def _pick_amp_type(recommendation: dict[str, Any], scores: dict[str, Any]) -> in
     rectifier = float(scores.get("rectifier_likelihood", 0) or 0)
     high_gain = float(scores.get("high_gain_likelihood", 0) or 0)
 
-    if "rect" in text or "mesa" in text or "boogie" in text or rectifier >= 4:
-        return 20
+    if "soldano" in text or "slo" in text:
+        return 82
+
+    if "rect" in text or "rectifier" in text or "mesa" in text or "boogie" in text or "dual" in text or rectifier >= 4:
+        return 71
+
+    if "dark" in text or "terror" in text or "orange" in text:
+        return 22
 
     if "5150" in text or "evh" in text or "peavey" in text:
         return 44
@@ -68,35 +70,69 @@ def _pick_amp_type(recommendation: dict[str, Any], scores: dict[str, Any]) -> in
     if "mark" in text:
         return 16
 
-    if "clean" in text or "fender" in text or "twin" in text:
+    if "jcm" in text or "j800" in text:
+        return 6
+
+    if "plexi" in text:
+        return 8
+
+    if "engl" in text or "e650" in text:
+        return 10
+
+    if "clean" in text or "twin" in text or "fender" in text:
         return 32
 
     if high_gain >= 6:
-        return 44
+        return 71
 
     return 20
 
 
-def _pick_cab_type(recommendation: dict[str, Any]) -> int:
+
+def _pick_cab_type(recommendation: dict[str, Any], scores: dict[str, Any]) -> int:
     text = " ".join(
         [
             str(recommendation.get("tone_type", "")),
             str(recommendation.get("amp_family", "")),
+            str(recommendation.get("amp_model", "")),
             str(recommendation.get("cabinet", {}).get("cab", "")),
         ]
     ).lower()
 
-    if "rect" in text or "mesa" in text:
-        return 6
+    scoop = float(scores.get("scoop", 0) or 0)
+    presence = float(scores.get("presence", 0) or 0)
+    body = float(scores.get("body", 0) or 0)
 
-    if "5150" in text or "modern" in text or "high gain" in text:
+    if "soldano" in text or "slo" in text:
+        if presence >= 5:
+            return 38
+        return 39
+
+    if "rect" in text or "rectifier" in text or "mesa" in text or "boogie" in text:
+        if scoop >= 6:
+            return 39
+        if body >= 6:
+            return 34
+        return 37
+
+    if "dark" in text or "terror" in text or "orange" in text:
+        if body >= 6:
+            return 23
         return 18
 
-    if "clean" in text or "open" in text or "2x12" in text:
-        return 26
+    if "5150" in text or "evh" in text or "peavey" in text:
+        return 18
 
-    return 8
+    if "mark" in text:
+        return 8
 
+    if "jcm" in text or "plexi" in text or "marshall" in text:
+        return 5
+
+    if "clean" in text or "twin" in text or "fender" in text:
+        return 27
+
+    return 37
 
 def _build_eq_data(eq_profile: dict[str, Any], recommendation: dict[str, Any]) -> dict[str, int]:
     """
