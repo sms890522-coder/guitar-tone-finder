@@ -218,14 +218,16 @@ def build_ge250_preset(
     ambience = recommendation.get("ambience", {}) or {}
 
     tone_type = recommendation.get("tone_type", "ToneScope")
-    preset_name = _safe_preset_name(f"TS {tone_type}")
-
-    # fileInfo
+    unique_suffix = str(int(time.time()))[-4:]
+    
+    preset_name = _safe_preset_name(f"TS {tone_type} {unique_suffix}")
+    
     preset.setdefault("fileInfo", {})
     preset["fileInfo"]["name"] = preset_name
     preset["fileInfo"]["device"] = "MOOER GE250"
     preset["fileInfo"]["schema"] = "GE250 Preset"
-
+    
+    filename = f"{preset_name.replace(' ', '_')}.mo"
     # Others
     preset.setdefault("Others", {})
     preset["Others"]["BPM"] = int(preset["Others"].get("BPM", 80) or 80)
