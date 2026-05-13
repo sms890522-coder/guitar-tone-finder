@@ -343,7 +343,23 @@ export default function Home() {
   const [jobStatus, setJobStatus] = useState('');
   const [tabJobStatus, setTabJobStatus] = useState('');
   const [globalStats, setGlobalStats] = useState<GlobalStats | null>(null);
+  const [supportOpen, setSupportOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
 
+  async function copySupportAccount() {
+    const accountText = '신한은행 110-319-629240 / 예금주: 서성민';
+  
+    try {
+      await navigator.clipboard.writeText(accountText);
+      setCopied(true);
+  
+      setTimeout(() => {
+        setCopied(false);
+      }, 1500);
+    } catch {
+      alert(accountText);
+    }
+  }
   async function fetchGlobalStats() {
     try {
       const API_BASE_URL = 'https://guitar-tone-finder-api.onrender.com';
@@ -615,10 +631,20 @@ export default function Home() {
               <h1 className="text-xl font-black tracking-tight">ToneScope AI</h1>
             </div>
           </div>
-          <div className="rounded-full border border-white/10 bg-white/5 px-3 py-2 text-[11px] text-slate-300">
-            {globalStats
-              ? `분석 ${globalStats.tone_analysis.toLocaleString()} · 타브 ${globalStats.tab_generation.toLocaleString()}`
-              : 'MVP v3'}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setSupportOpen(true)}
+              className="rounded-full border border-amber-300/20 bg-amber-300/10 px-4 py-2 text-xs font-bold text-amber-100 transition hover:bg-amber-300/20"
+            >
+              ☕ Coffee Tip
+            </button>
+
+
+            <div className="rounded-full border border-white/10 bg-white/5 px-3 py-2 text-[11px] text-slate-300">
+              {globalStats
+                ? `분석 ${globalStats.tone_analysis.toLocaleString()} · 타브 ${globalStats.tab_generation.toLocaleString()}`
+                : 'MVP v3'}
+            </div>
           </div>
         </nav>
         
@@ -810,6 +836,47 @@ export default function Home() {
           </section>
         </div>
       </section>
+      {supportOpen && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 px-5">
+          <div className="w-full max-w-md rounded-[2rem] border border-white/10 bg-slate-950 p-6 text-white shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-sm font-bold text-amber-200">Support</p>
+                <h3 className="mt-1 text-2xl font-black">☕ Coffee Tip</h3>
+              </div>
+      
+              <button
+                onClick={() => setSupportOpen(false)}
+                className="rounded-full bg-white/10 px-3 py-1 text-sm text-slate-300 hover:bg-white/20"
+              >
+                닫기
+              </button>
+            </div>
+      
+            <p className="mt-4 text-sm leading-7 text-slate-300">
+              ToneScope AI가 계속 무료로 운영될 수 있도록 커피 한잔으로 응원해주실 수 있어요.
+              후원은 선택이며 서비스 이용과 무관합니다.
+            </p>
+      
+            <div className="mt-5 rounded-2xl bg-white/5 p-4">
+              <p className="text-xs text-slate-400">후원 계좌</p>
+              <p className="mt-2 text-lg font-black">신한은행 110-319-629240</p>
+              <p className="mt-1 text-sm text-slate-300">예금주: 서성민</p>
+            </div>
+      
+            <button
+              onClick={copySupportAccount}
+              className="mt-5 w-full rounded-2xl bg-white px-5 py-4 font-black text-slate-950 transition hover:scale-[1.01]"
+            >
+              {copied ? '복사 완료!' : '계좌번호 복사하기'}
+            </button>
+      
+            <p className="mt-4 text-xs leading-5 text-slate-500">
+              보내주신 후원은 서버 운영비와 기능 개선에 사용됩니다.
+            </p>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
