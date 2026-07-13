@@ -14,30 +14,36 @@ def init_stats_db() -> None:
     return
 
 
-def get_stats() -> dict[str, int]:
-    stats = {
+def get_stats():
+    default_stats = {
         "tone_analysis": 0,
         "tab_generation": 0,
     }
 
-    response = (
-        supabase.table("app_stats")
-        .select("*")
-        .execute()
-    )
+    try:
+        response = (
+            supabase
+            .table("app_stats")
+            .select("*")
+            .execute()
+        )
 
-    print("ALL APP_STATS ROWS:", response.data)
+        stats = default_stats.copy()
 
-    for row in response.data or []:
-        name = row.get("name")
-        value = row.get("value", 0)
+        for row in response.data or []:
+            name = row.get("name")
+            value = row.get("value", 0)
 
-        if name in stats:
-            stats[name] = int(value or 0)
+            if name in stats:
+                stats[name] = int(value or 0)
 
-    print("RETURN STATS:", stats)
+        return stats
 
-    return stats
+    except Exception as error:
+        print(f"[STATS] Supabase 통계 조회 실패: {error}")
+
+        # Supabase가 멈춰도 앱이 죽지 않도록 기본값 반환
+        return default_stats
 
 
 def increment_counter(name: str) -> int:
