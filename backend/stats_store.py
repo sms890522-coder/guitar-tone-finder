@@ -47,24 +47,30 @@ def get_stats():
 
 
 def increment_counter(name: str) -> int:
-    if name not in ["tone_analysis", "tab_generation"]:
-        raise ValueError(f"Unknown counter name: {name}")
-
-    current = get_stats().get(name, 0)
-    new_value = current + 1
-
-    response = (
-        supabase.table("app_stats")
-        .upsert(
-            {
-                "name": name,
-                "value": new_value,
-            },
-            on_conflict="name",
+    try:
+        
+        if name not in ["tone_analysis", "tab_generation"]:
+            raise ValueError(f"Unknown counter name: {name}")
+    
+        current = get_stats().get(name, 0)
+        new_value = current + 1
+    
+        response = (
+            supabase.table("app_stats")
+            .upsert(
+                {
+                    "name": name,
+                    "value": new_value,
+                },
+                on_conflict="name",
+            )
+            .execute()
         )
-        .execute()
-    )
-
-    print("INCREMENT RESPONSE:", response.data)
-
-    return new_value
+    
+        print("INCREMENT RESPONSE:", response.data)
+    
+        return new_value
+        
+    except Exception as error:
+        print(f"[STATS] {name} 카운터 증가 실패: {error}")
+        return None
