@@ -322,10 +322,22 @@ async def tab_analyze_direct(file: UploadFile = File(...)):
 
 @app.get("/stats")
 async def stats():
-    return {
-        "ok": True,
-        "stats": get_stats(),
-    }
+    try:
+        stats_data = await asyncio.to_thread(get_stats)
+
+        return {
+            "ok": True,
+            "stats": stats_data,
+        }
+
+    except Exception as error:
+        print(f"[STATS] 통계 조회 실패: {error}")
+
+        # 통계만 실패한 것으로 처리하고 HTTP 500은 발생시키지 않음
+        return {
+            "ok": False,
+            "stats": None,
+        }
 
 
 @app.post("/stats/guide-download")
